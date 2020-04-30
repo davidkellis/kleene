@@ -1,0 +1,9 @@
+name: kleene
+version: 0.1.0
+
+authors:
+  - David Ellis <david@conquerthelawn.com>
+
+crystal: 0.34.0
+
+license: MIT
