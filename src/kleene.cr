@@ -21,7 +21,7 @@ module Kleene
     
     def literal(token_stream : String, alphabet = DEFAULT_ALPHABET)
       start = current_state = State.new
-      nfa = NFA.new(start, [] of Transition, alphabet)
+      nfa = NFA.new(start, [] of NFATransition, alphabet)
       token_stream.each_char do |token|
         next_state = State.new
         nfa.add_transition(token, current_state, next_state)
@@ -34,7 +34,7 @@ module Kleene
     
     def any(token_collection, alphabet = DEFAULT_ALPHABET)
       start = State.new
-      nfa = NFA.new(start, [] of Transition, alphabet)
+      nfa = NFA.new(start, [] of NFATransition, alphabet)
       final = State.new(true)
       token_collection.each {|token| nfa.add_transition(token, start, final) }
       nfa.update_final_states
@@ -64,7 +64,7 @@ module Kleene
       # add an epsilon transition from each final state of machine a to the start state of maachine b.
       # then mark each of a's final states as not final
       a.final_states.each do |final_state|
-        a.add_transition(Transition::Epsilon, final_state, b.start_state)
+        a.add_transition(NFATransition::Epsilon, final_state, b.start_state)
       end
       
       # add all of machine b's transitions to machine a
@@ -87,7 +87,7 @@ module Kleene
       # add an epsilon transition from each final state of machine a to the start state of maachine b.
       # then mark each of a's final states as not final
       a.final_states.each do |final_state|
-        a.add_transition(Transition::Epsilon, final_state, b.start_state)
+        a.add_transition(NFATransition::Epsilon, final_state, b.start_state)
         final_state.final = false
       end
       
@@ -103,11 +103,11 @@ module Kleene
       a = a.deep_clone
       b = b.deep_clone
       start = State.new
-      nfa = NFA.new(start, [] of Transition, a.alphabet | b.alphabet)
+      nfa = NFA.new(start, [] of NFATransition, a.alphabet | b.alphabet)
       
       # add epsilon transitions from the start state of the new machine to the start state of machines a and b
-      nfa.add_transition(Transition::Epsilon, start, a.start_state)
-      nfa.add_transition(Transition::Epsilon, start, b.start_state)
+      nfa.add_transition(NFATransition::Epsilon, start, a.start_state)
+      nfa.add_transition(NFATransition::Epsilon, start, b.start_state)
       
       # add all of a's and b's transitions to the new machine
       (a.transitions + b.transitions).each {|t| nfa.add_transition(t.token, t.from, t.to) }
@@ -121,11 +121,11 @@ module Kleene
       start = State.new
       final = State.new(true)
       
-      nfa = NFA.new(start, [] of Transition, machine.alphabet)
-      nfa.add_transition(Transition::Epsilon, start, final)
-      nfa.add_transition(Transition::Epsilon, start, machine.start_state)
+      nfa = NFA.new(start, [] of NFATransition, machine.alphabet)
+      nfa.add_transition(NFATransition::Epsilon, start, final)
+      nfa.add_transition(NFATransition::Epsilon, start, machine.start_state)
       machine.final_states.each do |final_state|
-        nfa.add_transition(Transition::Epsilon, final_state, start)
+        nfa.add_transition(NFATransition::Epsilon, final_state, start)
         final_state.final = false
       end
       
@@ -141,12 +141,12 @@ module Kleene
     end
     
     def optional(machine)
-      union(machine, NFA.new(State.new(true), [] of Transition, machine.alphabet))
+      union(machine, NFA.new(State.new(true), [] of NFATransition, machine.alphabet))
     end
     
     def repeat(machine, min, max = nil)
       max ||= min
-      m = NFA.new(State.new(true), [] of Transition, machine.alphabet)
+      m = NFA.new(State.new(true), [] of NFATransition, machine.alphabet)
       min.times { m = concat(m, machine) }
       (max - min).times { m = append(m, machine) }
       m
@@ -178,12 +178,12 @@ module Kleene
     property alphabet : Set(Char)
     property states : Set(State)
     property start_state : State
-    property transitions : Array(Transition)
+    property transitions : Array(NFATransition)
     property current_states : Set(State)
     property final_states : Set(State)
     property tags : Set(Int32)
     
-    def initialize(start_state, transitions = [] of Transition, alphabet = DEFAULT_ALPHABET, tags = Set(Int32).new)
+    def initialize(start_state, transitions = [] of NFATransition, alphabet = DEFAULT_ALPHABET, tags = Set(Int32).new)
       @start_state = start_state
       @transitions = transitions
       
@@ -204,7 +204,7 @@ module Kleene
       old_states = @states.to_a
       new_states = old_states.map(&.dup)
       state_mapping = old_states.zip(new_states).to_h
-      new_transitions = @transitions.map {|t| Transition.new(t.token, state_mapping[t.from], state_mapping[t.to]) }
+      new_transitions = @transitions.map {|t| NFATransition.new(t.token, state_mapping[t.from], state_mapping[t.to]) }
       
       NFA.new(state_mapping[@start_state], new_transitions, @alphabet.clone, @tags.clone)
     end
@@ -228,7 +228,7 @@ module Kleene
     def add_transition(token, from_state, to_state)
       @alphabet << token      # alphabet is a set, so there will be no duplications
       @states << to_state     # states is a set, so there will be no duplications (to_state should be the only new state)
-      t = Transition.new(token, from_state, to_state)
+      t = NFATransition.new(token, from_state, to_state)
       @transitions << t
       t
     end
@@ -298,11 +298,11 @@ module Kleene
     # Determine the epsilon closure of the given state set
     # That is, determine what states are reachable on an epsilon transition from the current state set (@current_states).
     # Returns a Set of State objects.
-    def epsilon_closure(state_set)
+    def epsilon_closure(state_set) : Set(State)
       visited_states = Set(State).new()
       unvisited_states = state_set
       while !unvisited_states.empty?
-        epsilon_transitions = @transitions.select { |t| t.accept?(Transition::Epsilon) && unvisited_states.includes?(t.from) }
+        epsilon_transitions = @transitions.select { |t| t.accept?(NFATransition::Epsilon) && unvisited_states.includes?(t.from) }
         destination_states = epsilon_transitions.map(&.to).to_set
         visited_states.concat(unvisited_states)         # add the unvisited states to the visited_states
         unvisited_states = destination_states - visited_states
@@ -326,41 +326,36 @@ module Kleene
     # This implements the subset construction algorithm presented on page 118 of the first edition of the dragon book.
     # I found a similar explanation at: http://web.cecs.pdx.edu/~harry/compilers/slides/LexicalPart3.pdf
     def to_dfa
-      state_map = Hash.new            # this map contains nfa_state_set => dfa_state pairs
-      dfa_transitions = [] of Transition
-      dfa_alphabet = @alphabet - Set{Transition::Epsilon}
-      visited_state_sets = Set.new()
-      nfa_start_state_set = epsilon_closure([@start_state])
-      unvisited_state_sets = Set[nfa_start_state_set]
+      state_map = Hash(Set(State), State).new            # this map contains (nfa_state_set => dfa_state) pairs
+      dfa_transitions = [] of DFATransition
+      dfa_alphabet = @alphabet - Set{NFATransition::Epsilon}
+      visited_state_sets = Set(Set(State)).new()
+      nfa_start_state_set : Set(State) = epsilon_closure([@start_state])
+      unvisited_state_sets : Set(Set(State)) = Set{nfa_start_state_set}
+
+      dfa_start_state = State.new(nfa_start_state_set.any?(&.final?))
+      state_map[nfa_start_state_set] = dfa_start_state
       until unvisited_state_sets.empty?
         # take one of the unvisited state sets
         state_set = unvisited_state_sets.first
-        unvisited_state_sets.delete(state_set)
 
-        # this new DFA state, new_dfa_state, represents the nfa state set, state_set
-        new_dfa_state = State.new(state_set.any?(&.final?))
-        
-        # add the mapping from nfa state set => dfa state
-        state_map[state_set] = new_dfa_state
-        
+        current_dfa_state = state_map[state_set]
+
         # Figure out the set of next-states for each token in the alphabet
         # Add each set of next-states to unvisited_state_sets
         dfa_alphabet.each do |token|
           next_nfa_state_set = next_states(state_set, token)
           unvisited_state_sets << next_nfa_state_set
-          # add a transition from new_dfa_state -> next_nfa_state_set
-          # next_nfa_state_set is a placeholder that I'll go back and replace with the corresponding dfa_state
-          # I don't insert the dfa_state yet, because it hasn't been created yet
-          dfa_transitions << Transition.new(token, new_dfa_state, next_nfa_state_set)
+
+          # this new DFA state, next_dfa_state, represents the next nfa state set, next_nfa_state_set
+          next_dfa_state = state_map[next_nfa_state_set] ||= State.new(next_nfa_state_set.any?(&.final?))
+        
+          dfa_transitions << DFATransition.new(token, current_dfa_state, next_dfa_state)
         end
         
         visited_state_sets << state_set
         unvisited_state_sets = unvisited_state_sets - visited_state_sets
       end
-      
-      # replace the nfa_state_set currently stored in each transition's "to" field with the
-      # corresponding dfa state.
-      dfa_transitions.each {|transition| transition.to = state_map[transition.to] }
       
       DFA.new(state_map[nfa_start_state_set], dfa_transitions, dfa_alphabet, @tags.clone)
     end
@@ -428,7 +423,25 @@ module Kleene
     end
   end
 
-  class Transition
+  class NFATransition
+    Epsilon = '\u0000'    # we use the null character as a sentinal character indicating epsilon transition
+    
+    property token : Char
+    property from : State
+    property to : State
+    
+    def initialize(token, from_state, to_state)
+      @token = token
+      @from = from_state
+      @to = to_state
+    end
+    
+    def accept?(input)
+      @token == input
+    end
+  end
+
+  class DFATransition
     Epsilon = '\u0000'    # we use the null character as a sentinal character indicating epsilon transition
     
     property token : Char
@@ -480,12 +493,14 @@ module Kleene
     property alphabet : Set(Char)
     property states : Set(State)
     property start_state : State
-    property transitions : Array(Transition)
+    property current_state : State
+    property transitions : Array(DFATransition)
     property final_states : Set(State)
     property tags : Set(Int32)
     
-    def initialize(start_state, transitions = [] of Transition, alphabet = DEFAULT_ALPHABET, tags = Set(Int32).new)
+    def initialize(start_state, transitions = [] of DFATransition, alphabet = DEFAULT_ALPHABET, tags = Set(Int32).new)
       @start_state = start_state
+      @current_state = start_state
       @transitions = transitions
       
       @alphabet = alphabet
@@ -504,7 +519,7 @@ module Kleene
       old_states = @states.to_a
       new_states = old_states.map(&.dup)
       state_mapping = old_states.zip(new_states).to_h
-      new_transitions = @transitions.map {|t| Transition.new(t.token, state_mapping[t.from], state_mapping[t.to]) }
+      new_transitions = @transitions.map {|t| DFATransition.new(t.token, state_mapping[t.from], state_mapping[t.to]) }
       
       DFA.new(state_mapping[@start_state], new_transitions, @alphabet.clone, @tags.clone)
     end
@@ -528,7 +543,7 @@ module Kleene
     def add_transition(token, from_state, to_state)
       @alphabet << token      # alphabet is a set, so there will be no duplications
       @states << to_state     # states is a set, so there will be no duplications (to_state should be the only new state)
-      t = Transition.new(token, from_state, to_state)
+      t = DFATransition.new(token, from_state, to_state)
       @transitions << t
       t
     end
@@ -551,7 +566,7 @@ module Kleene
       reset_current_state
 
       matches = [] of MatchRef
-      (input_start_offset...input.length).each do |offset|
+      (input_start_offset...input.size).each do |offset|
         token = input[offset]
         self << token
         if accept?
@@ -564,7 +579,7 @@ module Kleene
     
     # Returns an array of matches found anywhere in the input string
     def matches(input)
-      (0...input.length).reduce([] of MatchRef) do |memo, offset|
+      (0...input.size).reduce([] of MatchRef) do |memo, offset|
         memo + matches_at_offset(input, offset)
       end
     end
@@ -579,14 +594,14 @@ module Kleene
     end
     
     def next_state(state, input_token)
-      t = @transitions.find {|t| state == t.from && t.accept?(input_token) }
+      t = @transitions.find {|t| state == t.from && t.accept?(input_token) } || raise "No DFA transition found!"
       t.to
     end
 
     # Returns a set of State objects which are reachable through any transition path from the NFA's start_state.
     def reachable_states
       visited_states = Set(State).new()
-      unvisited_states = Set[@start_state]
+      unvisited_states = Set{@start_state}
       while !unvisited_states.empty?
         outbound_transitions = @transitions.select { |t| unvisited_states.includes?(t.from) }
         destination_states = outbound_transitions.map(&.to).to_set
