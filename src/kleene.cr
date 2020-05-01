@@ -14,7 +14,7 @@ module Kleene
   #     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 
   #     'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 
   #     '{', '|', '}', '~', "\n", "\t"}
-  DEFAULT_ALPHABET = ((' '..'~').map(&.to_s) + ["\n"] + ["\t"]).to_set
+  DEFAULT_ALPHABET = ((' '..'~').to_a + "\n\t".chars).to_set
 
   module DSL
     ############### The following methods create FSAs given a stream of input tokens #################
@@ -179,6 +179,7 @@ module Kleene
     property states : Set(State)
     property start_state : State
     property transitions : Array(Transition)
+    property current_states : Set(State)
     property final_states : Set(State)
     property tags : Set(Int32)
     
@@ -187,9 +188,10 @@ module Kleene
       @transitions = transitions
       
       @alphabet = alphabet
-      @alphabet.merge(@transitions.map(&.token))
+      @alphabet.concat(@transitions.map(&.token))
       
       @states = reachable_states
+      @current_states = Set(State).new
       @final_states = Set(State).new
 
       @tags = tags || Set(Int32).new
@@ -231,7 +233,7 @@ module Kleene
       t
     end
     
-    def match?(input : String)
+    def match?(input : String) : MatchRef?
       reset_current_states
       
       input.each_char do |char|
@@ -249,7 +251,7 @@ module Kleene
       reset_current_states
 
       matches = [] of MatchRef
-      (input_start_offset...input.length).each do |offset|
+      (input_start_offset...input.size).each do |offset|
         token = input[offset]
         self << token
         if accept?
@@ -262,7 +264,7 @@ module Kleene
     
     # Returns an array of matches found anywhere in the input string
     def matches(input)
-      (0...input.length).reduce([] of MatchRef) do |memo, offset|
+      (0...input.size).reduce([] of MatchRef) do |memo, offset|
         memo + matches_at_offset(input, offset)
       end
     end
@@ -282,27 +284,27 @@ module Kleene
       
       # Build an array of outbound transitions from each state in the epsilon-closure
       # Filter the outbound transitions, selecting only those that accept the input we are given.
-      outbound_transitions = @transitions.select {|t| epsilon_reachable_states.include?(t.from) && t.accept?(input_token) }
+      outbound_transitions = @transitions.select {|t| epsilon_reachable_states.includes?(t.from) && t.accept?(input_token) }
       
       # Build an array of epsilon-closures of each transition's destination state.
       destination_state_epsilon_closures = outbound_transitions.map { |t| epsilon_closure([t.to]) }
       
       # Union each of the epsilon-closures (each is an array) together to form a flat array of states in the epsilon-closure of all of our current states.
-      next_states = destination_state_epsilon_closures.reduce { |combined_state_set, individual_state_set| combined_state_set.merge(individual_state_set) }
+      next_states = destination_state_epsilon_closures.reduce? { |combined_state_set, individual_state_set| combined_state_set.concat(individual_state_set) }
       
-      next_states || Set.new
+      next_states || Set(State).new
     end
 
     # Determine the epsilon closure of the given state set
     # That is, determine what states are reachable on an epsilon transition from the current state set (@current_states).
     # Returns a Set of State objects.
     def epsilon_closure(state_set)
-      visited_states = Set.new()
+      visited_states = Set(State).new()
       unvisited_states = state_set
       while !unvisited_states.empty?
-        epsilon_transitions = @transitions.select { |t| t.accept?(Transition::Epsilon) && unvisited_states.include?(t.from) }
+        epsilon_transitions = @transitions.select { |t| t.accept?(Transition::Epsilon) && unvisited_states.includes?(t.from) }
         destination_states = epsilon_transitions.map(&.to).to_set
-        visited_states.merge(unvisited_states)         # add the unvisited states to the visited_states
+        visited_states.concat(unvisited_states)         # add the unvisited states to the visited_states
         unvisited_states = destination_states - visited_states
       end
       visited_states
@@ -311,11 +313,11 @@ module Kleene
     # Returns a set of State objects which are reachable through any transition path from the NFA's start_state.
     def reachable_states
       visited_states = Set(State).new()
-      unvisited_states = Set[@start_state]
+      unvisited_states = Set{@start_state}
       while !unvisited_states.empty?
-        outbound_transitions = @transitions.select { |t| unvisited_states.include?(t.from) }
+        outbound_transitions = @transitions.select { |t| unvisited_states.includes?(t.from) }
         destination_states = outbound_transitions.map(&.to).to_set
-        visited_states.merge(unvisited_states)         # add the unvisited states to the visited_states
+        visited_states.concat(unvisited_states)         # add the unvisited states to the visited_states
         unvisited_states = destination_states - visited_states
       end
       visited_states
@@ -427,7 +429,7 @@ module Kleene
   end
 
   class Transition
-    Epsilon = :epsilon
+    Epsilon = '\u0000'    # we use the null character as a sentinal character indicating epsilon transition
     
     property token : Char
     property from : State
@@ -463,13 +465,13 @@ module Kleene
       match.to_s
     end
     
-    def ==(other)
+    def ==(other : MatchRef)
       @string == other.string &&
       @range == other.range &&
       @tags == other.tags
     end
     
-    def eql?(other)
+    def eql?(other : MatchRef)
       self == other
     end
   end
@@ -487,7 +489,7 @@ module Kleene
       @transitions = transitions
       
       @alphabet = alphabet
-      @alphabet.merge(@transitions.map(&.token))
+      @alphabet.concat(@transitions.map(&.token))
       
       @states = reachable_states
       @final_states = Set(State).new
@@ -586,9 +588,9 @@ module Kleene
       visited_states = Set(State).new()
       unvisited_states = Set[@start_state]
       while !unvisited_states.empty?
-        outbound_transitions = @transitions.select { |t| unvisited_states.include?(t.from) }
+        outbound_transitions = @transitions.select { |t| unvisited_states.includes?(t.from) }
         destination_states = outbound_transitions.map(&.to).to_set
-        visited_states.merge(unvisited_states)         # add the unvisited states to the visited_states
+        visited_states.concat(unvisited_states)         # add the unvisited states to the visited_states
         unvisited_states = destination_states - visited_states
       end
       visited_states
