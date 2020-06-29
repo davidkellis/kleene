@@ -1,7 +1,6 @@
 # this is a port and extension of https://github.com/davidkellis/fsm/
 
-# Most of the machines constructed here are based
-# on section 2.5 of the Ragel User Guide (http://www.complang.org/ragel/ragel-guide-6.6.pdf)
+require "./dsl.cr"
 
 module Kleene
   # The default alphabet consists of the following:
@@ -16,164 +15,6 @@ module Kleene
   #     '{', '|', '}', '~', "\n", "\t"}
   DEFAULT_ALPHABET = ((' '..'~').to_a + "\n\t".chars).to_set
 
-  module DSL
-    ############### The following methods create FSAs given a stream of input tokens #################
-    
-    def literal(token_stream : String, alphabet = DEFAULT_ALPHABET)
-      start = current_state = State.new
-      nfa = NFA.new(start, [] of NFATransition, alphabet)
-      token_stream.each_char do |token|
-        next_state = State.new
-        nfa.add_transition(token, current_state, next_state)
-        current_state = next_state
-      end
-      current_state.final = true
-      nfa.update_final_states
-      nfa
-    end
-    
-    def any(token_collection, alphabet = DEFAULT_ALPHABET)
-      start = State.new
-      nfa = NFA.new(start, [] of NFATransition, alphabet)
-      final = State.new(true)
-      token_collection.each {|token| nfa.add_transition(token, start, final) }
-      nfa.update_final_states
-      nfa
-    end
-    
-    def dot(alphabet = DEFAULT_ALPHABET)
-      any(alphabet)
-    end
-    
-    # This implements a character class, and is specifically for use with matching strings
-    def range(c_begin : Char, c_end : Char, alphabet = DEFAULT_ALPHABET)
-      any((c_begin..c_end).to_a, alphabet)
-    end
-    
-    ############### The following methods create FSAs given other FSAs #################
-    
-    # Append b onto a
-    # Appending produces a machine that matches all the strings in machine a 
-    # followed by all the strings in machine b.
-    # This differs from concat in that the composite machine's final states are the union of machine a's final states
-    # and machine b's final states.
-    def append(a, b)
-      a = a.deep_clone
-      b = b.deep_clone
-      
-      # add an epsilon transition from each final state of machine a to the start state of maachine b.
-      # then mark each of a's final states as not final
-      a.final_states.each do |final_state|
-        a.add_transition(NFATransition::Epsilon, final_state, b.start_state)
-      end
-      
-      # add all of machine b's transitions to machine a
-      b.transitions.each {|t| a.add_transition(t.token, t.from, t.to) }
-      a.final_states = a.final_states | b.final_states
-      a.alphabet = a.alphabet | b.alphabet
-      
-      a
-    end
-    
-    # Concatenate b onto a
-    # Concatenation produces a machine that matches all the strings in machine a 
-    # followed by all the strings in machine b.
-    # This differs from append in that the composite machine's final states are the set of final states
-    # taken from machine b.
-    def concat(a, b)
-      a = a.deep_clone
-      b = b.deep_clone
-      
-      # add an epsilon transition from each final state of machine a to the start state of maachine b.
-      # then mark each of a's final states as not final
-      a.final_states.each do |final_state|
-        a.add_transition(NFATransition::Epsilon, final_state, b.start_state)
-        final_state.final = false
-      end
-      
-      # add all of machine b's transitions to machine a
-      b.transitions.each {|t| a.add_transition(t.token, t.from, t.to) }
-      a.final_states = b.final_states
-      a.alphabet = a.alphabet | b.alphabet
-      
-      a
-    end
-    
-    def union(a, b)
-      a = a.deep_clone
-      b = b.deep_clone
-      start = State.new
-      nfa = NFA.new(start, [] of NFATransition, a.alphabet | b.alphabet)
-      
-      # add epsilon transitions from the start state of the new machine to the start state of machines a and b
-      nfa.add_transition(NFATransition::Epsilon, start, a.start_state)
-      nfa.add_transition(NFATransition::Epsilon, start, b.start_state)
-      
-      # add all of a's and b's transitions to the new machine
-      (a.transitions + b.transitions).each {|t| nfa.add_transition(t.token, t.from, t.to) }
-      nfa.update_final_states
-      
-      nfa
-    end
-    
-    def kleene(machine)
-      machine = machine.deep_clone
-      start = State.new
-      final = State.new(true)
-      
-      nfa = NFA.new(start, [] of NFATransition, machine.alphabet)
-      nfa.add_transition(NFATransition::Epsilon, start, final)
-      nfa.add_transition(NFATransition::Epsilon, start, machine.start_state)
-      machine.final_states.each do |final_state|
-        nfa.add_transition(NFATransition::Epsilon, final_state, start)
-        final_state.final = false
-      end
-      
-      # add all of machine's transitions to the new machine
-      (machine.transitions).each {|t| nfa.add_transition(t.token, t.from, t.to) }
-      nfa.update_final_states
-      
-      nfa
-    end
-    
-    def plus(machine)
-      concat(machine, kleene(machine))
-    end
-    
-    def optional(machine)
-      union(machine, NFA.new(State.new(true), [] of NFATransition, machine.alphabet))
-    end
-    
-    def repeat(machine, min, max = nil)
-      max ||= min
-      m = NFA.new(State.new(true), [] of NFATransition, machine.alphabet)
-      min.times { m = concat(m, machine) }
-      (max - min).times { m = append(m, machine) }
-      m
-    end
-    
-    def negate(machine)
-      # difference(kleene(any(alphabet)), machine)
-      machine = machine.to_dfa
-      
-      # invert the final flag of every state
-      machine.states.each {|state| state.final = !state.final? }
-      machine.update_final_states
-      
-      machine.to_nfa
-    end
-    
-    # a - b == a && !b
-    def difference(a, b)
-      intersection(a, negate(b))
-    end
-    
-    # By De Morgan's Law: !(!a || !b) = a && b
-    def intersection(a, b)
-      negate(union(negate(a), negate(b)))
-    end
-  end
-
   class NFA
     property alphabet : Set(Char)
     property states : Set(State)
@@ -181,9 +22,8 @@ module Kleene
     property transitions : Array(NFATransition)
     property current_states : Set(State)
     property final_states : Set(State)
-    property tags : Set(Int32)
     
-    def initialize(start_state, transitions = [] of NFATransition, alphabet = DEFAULT_ALPHABET, tags = Set(Int32).new)
+    def initialize(start_state, transitions = [] of NFATransition, alphabet = DEFAULT_ALPHABET)
       @start_state = start_state
       @transitions = transitions
       
@@ -193,8 +33,6 @@ module Kleene
       @states = reachable_states
       @current_states = Set(State).new
       @final_states = Set(State).new
-
-      @tags = tags || Set(Int32).new
 
       update_final_states
       reset_current_states
@@ -206,17 +44,9 @@ module Kleene
       state_mapping = old_states.zip(new_states).to_h
       new_transitions = @transitions.map {|t| NFATransition.new(t.token, state_mapping[t.from], state_mapping[t.to]) }
       
-      NFA.new(state_mapping[@start_state], new_transitions, @alphabet.clone, @tags.clone)
+      NFA.new(state_mapping[@start_state], new_transitions, @alphabet.clone)
     end
 
-    def tag(tag : T)
-      @states.each {|state| state.tag(tag) }
-    end
-
-    def tag(tags : Set(Int32))
-      @states.each {|state| state.tag(tags) }
-    end
-    
     def update_final_states
       @final_states = @states.select { |s| s.final? }.to_set
     end
@@ -241,8 +71,7 @@ module Kleene
       end
       
       if accept?
-        accept_state_tags = @current_states.select(&.final?).map(&.tags).reduce {|tag_set_accumulator, tag_set| tag_set_accumulator | tag_set }
-        MatchRef.new(input, 0...input.size, accept_state_tags)
+        MatchRef.new(input, 0...input.size)
       end
     end
     
@@ -255,8 +84,7 @@ module Kleene
         token = input[offset]
         self << token
         if accept?
-          accept_state_tags = @current_states.select(&.final?).map(&.tags).reduce {|tag_set_accumulator, tag_set| tag_set_accumulator | tag_set }
-          matches << MatchRef.new(input, input_start_offset..offset, accept_state_tags)
+          matches << MatchRef.new(input, input_start_offset..offset)
         end
       end
       matches
@@ -290,7 +118,7 @@ module Kleene
       destination_state_epsilon_closures = outbound_transitions.map { |t| epsilon_closure([t.to]) }
       
       # Union each of the epsilon-closures (each is an array) together to form a flat array of states in the epsilon-closure of all of our current states.
-      next_states = destination_state_epsilon_closures.reduce? { |combined_state_set, individual_state_set| combined_state_set.concat(individual_state_set) }
+      next_states = destination_state_epsilon_closures.reduce? {|combined_state_set, individual_state_set| combined_state_set.concat(individual_state_set) }
       
       next_states || Set(State).new
     end
@@ -357,7 +185,8 @@ module Kleene
         unvisited_state_sets = unvisited_state_sets - visited_state_sets
       end
       
-      DFA.new(state_map[nfa_start_state_set], dfa_transitions, dfa_alphabet, @tags.clone)
+      # `state_map.invert` is sufficient to convert from a (nfa_state_set => dfa_state) mapping to a (dfa_state => nfa_state_set) mapping, because the mappings are strictly one-to-one.
+      DFA.new(state_map[nfa_start_state_set], dfa_transitions, dfa_alphabet, state_map.invert)
     end
     
     # def traverse
@@ -397,34 +226,23 @@ module Kleene
 
     getter id : Int32
     property final : Bool
-    property tags : Set(Int32)
 
-    def initialize(final = false, id : Int32? = nil, tags = Set(Int32).new)
+    def initialize(final = false, id : Int32? = nil)
       @id = id || State.next_id
       @final = final
-      @tags = tags
     end
-
-    def tag(tag)
-      @tags << tag
-    end
-
-    def tag(tags : Set(Int32))
-      @tags |= tags
-    end
-
 
     def final?
       @final
     end
     
     def dup
-      State.new(@final, nil, tags)
+      State.new(@final, nil)
     end
   end
 
   class NFATransition
-    Epsilon = '\u0000'    # we use the null character as a sentinal character indicating epsilon transition
+    Epsilon = '\u0000'    # hack: we use the null character as a sentinal character indicating epsilon transition
     
     property token : Char
     property from : State
@@ -442,8 +260,6 @@ module Kleene
   end
 
   class DFATransition
-    Epsilon = '\u0000'    # we use the null character as a sentinal character indicating epsilon transition
-    
     property token : Char
     property from : State
     property to : State
@@ -462,26 +278,23 @@ module Kleene
   class MatchRef
     property string : String
     property range : Range(Int32, Int32)
-    property tags : Set(Int32)
 
-    def initialize(original_string, match_range, tags)
+    def initialize(original_string, match_range)
       @string = original_string
       @range = match_range
-      @tags = tags
     end
     
-    def match
+    def match : String
       @string[@range]
     end
     
     def to_s
-      match.to_s
+      match
     end
     
     def ==(other : MatchRef)
       @string == other.string &&
-      @range == other.range &&
-      @tags == other.tags
+      @range == other.range
     end
     
     def eql?(other : MatchRef)
@@ -496,9 +309,9 @@ module Kleene
     property current_state : State
     property transitions : Array(DFATransition)
     property final_states : Set(State)
-    property tags : Set(Int32)
+    property dfa_state_to_nfa_state_sets : Hash(State, Set(State))            # this map contains (dfa_state => nfa_state_set) pairs
     
-    def initialize(start_state, transitions = [] of DFATransition, alphabet = DEFAULT_ALPHABET, tags = Set(Int32).new)
+    def initialize(start_state, transitions = [] of DFATransition, alphabet = DEFAULT_ALPHABET, @dfa_state_to_nfa_state_sets = Hash(State, Set(State)).new)
       @start_state = start_state
       @current_state = start_state
       @transitions = transitions
@@ -509,8 +322,6 @@ module Kleene
       @states = reachable_states
       @final_states = Set(State).new
 
-      @tags = tags || Set(Int32).new
-
       update_final_states
       reset_current_state
     end
@@ -520,18 +331,11 @@ module Kleene
       new_states = old_states.map(&.dup)
       state_mapping = old_states.zip(new_states).to_h
       new_transitions = @transitions.map {|t| DFATransition.new(t.token, state_mapping[t.from], state_mapping[t.to]) }
+      new_dfa_state_to_nfa_state_sets = dfa_state_to_nfa_state_sets.map {|dfa_state, nfa_state_set| {state_mapping[dfa_state], nfa_state_set} }.to_h
       
-      DFA.new(state_mapping[@start_state], new_transitions, @alphabet.clone, @tags.clone)
+      DFA.new(state_mapping[@start_state], new_transitions, @alphabet.clone, new_dfa_state_to_nfa_state_sets)
     end
 
-    def tag(tag : T)
-      @states.each {|state| state.tag(tag) }
-    end
-
-    def tag(tags : Set(Int32))
-      @states.each {|state| state.tag(tags) }
-    end
-    
     def update_final_states
       @final_states = @states.select { |s| s.final? }.to_set
     end
@@ -556,8 +360,7 @@ module Kleene
       end
       
       if accept?
-        accept_state_tags = @current_state.tags
-        MatchRef.new(input, 0...input.size, accept_state_tags)
+        MatchRef.new(input, 0...input.size)
       end
     end
     
@@ -570,8 +373,7 @@ module Kleene
         token = input[offset]
         self << token
         if accept?
-          accept_state_tags = @current_state.tags
-          matches << MatchRef.new(input, input_start_offset..offset, accept_state_tags)
+          matches << MatchRef.new(input, input_start_offset..offset)
         end
       end
       matches
@@ -591,6 +393,15 @@ module Kleene
     
     def accept?
       @current_state.final?
+    end
+
+    # if the DFA is currently in a final state, then we look up the associated NFA states that were also final, and return them
+    def accepting_nfa_states : Set(State)
+      if accept?
+        dfa_state_to_nfa_state_sets[@current_state].select(&.final?)
+      else
+        Set(State).new
+      end
     end
     
     def next_state(state, input_token)
@@ -613,7 +424,7 @@ module Kleene
     
     def to_nfa
       dfa = self.deep_clone
-      NFA.new(dfa.start_state, dfa.transitions, dfa.alphabet.clone, @tags.clone)
+      NFA.new(dfa.start_state, dfa.transitions, dfa.alphabet.clone)
       # todo: add all of this machine's transitions to the new machine
       # @transitions.each {|t| nfa.add_transition(t.token, t.from, t.to) }
       # nfa
@@ -626,64 +437,64 @@ module Kleene
     end
   end
 
-  class MultiFSA
-    @nfas : Array(NFA)
-    @composite_nfa : NFA?
-    @composite_dfa : DFA?
+  # class MultiFSA
+  #   @nfas : Array(NFA)
+  #   @composite_nfa : NFA?
+  #   @composite_dfa : DFA?
 
-    include DSL
+  #   include DSL
     
-    def initialize(nfas = nil)
-      @nfas = nfas || [] of NFA
-      @composite_nfa = nil
-      @composite_dfa = nil
-    end
+  #   def initialize(nfas = nil)
+  #     @nfas = nfas || [] of NFA
+  #     @composite_nfa = nil
+  #     @composite_dfa = nil
+  #   end
 
-    # returns the tag identifying the newly added nfa
-    def add(nfa)
-      @composite_dfa = nil    # invalidate memoized dfa
+  #   # returns the tag identifying the newly added nfa
+  #   def add(nfa)
+  #     @composite_dfa = nil    # invalidate memoized dfa
 
-      tag = @nfas.size
-      nfa = nfa.deep_clone
-      nfa.tag(tag)
-      @nfas << nfa
-      if composite_nfa = @composite_nfa
-        @composite_nfa = union(composite_nfa, nfa)
-      else
-        @composite_nfa = nfa
-      end
-      tag
-    end
+  #     tag = @nfas.size
+  #     nfa = nfa.deep_clone
+  #     nfa.tag(tag)
+  #     @nfas << nfa
+  #     if composite_nfa = @composite_nfa
+  #       @composite_nfa = union(composite_nfa, nfa)
+  #     else
+  #       @composite_nfa = nfa
+  #     end
+  #     tag
+  #   end
 
-    def match?(input : String) : Set(Int32)?
-      composite_dfa = (@composite_dfa ||= @composite_nfa.to_dfa)
-      if composite_dfa
-        match = composite_dfa.match?(input)
-        match && match.tags
-      end
-    end
-  end
+  #   def match?(input : String) : Set(Int32)?
+  #     composite_dfa = (@composite_dfa ||= @composite_nfa.to_dfa)
+  #     if composite_dfa
+  #       match = composite_dfa.match?(input)
+  #       match && match.tags
+  #     end
+  #   end
+  # end
 
-  # FSA::Map allows you to insert Regex -> V pairs, and lookup values based on a search string
-  class Map(V)
-    @map : Hash(Int32, V)
-    @multi_fsa : MultiFSA
+  # # FSA::Map allows you to insert Regex -> V pairs, and lookup values based on a search string
+  # class Map(V)
+  #   @map : Hash(Int32, V)
+  #   @multi_fsa : MultiFSA
 
-    def initialize()
-      @map = Hash(Int32, V).new
-      @multi_fsa = MultiFSA.new
-    end
+  #   def initialize()
+  #     @map = Hash(Int32, V).new
+  #     @multi_fsa = MultiFSA.new
+  #   end
 
-    def []=(nfa : NFA, value : V)
-      tag = @multi_fsa.add(nfa)
-      @map[tag] = value
-    end
+  #   def []=(nfa : NFA, value : V)
+  #     tag = @multi_fsa.add(nfa)
+  #     @map[tag] = value
+  #   end
 
-    # return an Array(V) representing the values corresponding to the regex matches that match the given `search_key`
-    # if there are no matches, returns nil
-    def [](search_key : String) : Array(V)?
-      match = @multi_fsa.match?(search_key)
-      match.tags.map {|tag| @map[tag] } if match
-    end
-  end
+  #   # return an Array(V) representing the values corresponding to the regex matches that match the given `search_key`
+  #   # if there are no matches, returns nil
+  #   def [](search_key : String) : Array(V)?
+  #     match = @multi_fsa.match?(search_key)
+  #     match.tags.map {|tag| @map[tag] } if match
+  #   end
+  # end
 end

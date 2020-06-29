@@ -1,17 +1,20 @@
 require "./spec_helper"
 
+include Kleene
+include DSL
+
 describe Kleene do
   describe "nfa" do
     it "works" do
       # create some states with which to manually construct an NFA
-      start = Kleene::State.new
-      a = Kleene::State.new
-      b1 = Kleene::State.new
-      b2 = Kleene::State.new
-      c = Kleene::State.new(true)
+      start = State.new
+      a = State.new
+      b1 = State.new
+      b2 = State.new
+      c = State.new(true)
     
       # build an NFA to match "abbc"
-      nfa = Kleene::NFA.new(start)
+      nfa = NFA.new(start)
       nfa.add_transition('a', start, a)
       nfa.add_transition('b', a, b1)
       nfa.add_transition('b', b1, b2)
@@ -25,10 +28,10 @@ describe Kleene do
 
 
       # build an NFA to match "abb?c"
-      nfa = Kleene::NFA.new(start)
+      nfa = NFA.new(start)
       nfa.add_transition('a', start, a)
       nfa.add_transition('b', a, b1)
-      nfa.add_transition(Kleene::NFATransition::Epsilon, a, b1)
+      nfa.add_transition(NFATransition::Epsilon, a, b1)
       nfa.add_transition('b', b1, b2)
       nfa.add_transition('c', b2, c)
     
@@ -54,14 +57,14 @@ describe Kleene do
   describe "dfa" do
     it "works" do
       # create some states with which to manually construct an NFA and a DFA
-      start = Kleene::State.new
-      a = Kleene::State.new
-      b1 = Kleene::State.new
-      b2 = Kleene::State.new
-      c = Kleene::State.new(true)
+      start = State.new
+      a = State.new
+      b1 = State.new
+      b2 = State.new
+      c = State.new(true)
     
       # build a DFA to match "abbc"
-      nfa = Kleene::NFA.new(start)
+      nfa = NFA.new(start)
       nfa.add_transition('a', start, a)
       nfa.add_transition('b', a, b1)
       nfa.add_transition('b', b1, b2)
@@ -76,10 +79,10 @@ describe Kleene do
       
 
       # build a DFA to match "abb?c"
-      nfa = Kleene::NFA.new(start)
+      nfa = NFA.new(start)
       nfa.add_transition('a', start, a)
       nfa.add_transition('b', a, b1)
-      nfa.add_transition(Kleene::NFATransition::Epsilon, a, b1)
+      nfa.add_transition(NFATransition::Epsilon, a, b1)
       nfa.add_transition('b', b1, b2)
       nfa.add_transition('c', b2, c)
       dfa = nfa.to_dfa
@@ -101,5 +104,14 @@ describe Kleene do
       matches[1].match.should eq "abc"
       matches[2].match.should eq "abbc"
     end
+  end
+end
+
+describe "RegexSet" do
+  it "works" do
+    regex1 = seq(literal("a"), dot)   # /a./
+    regex2 = seq(dot, literal("b"))   # /.b/
+    regex_set = RegexSet.new([regex1, regex2])
+    regex_set.match("abcbazaaabcbzbbbb").should eq([] of MatchRef)
   end
 end
