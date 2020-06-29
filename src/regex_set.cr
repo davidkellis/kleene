@@ -7,7 +7,7 @@ module Kleene
     property nfas : Array(NFA)
     property nfa_states_to_nfa : Hash(State, NFA)
     property nfa : NFA
-    property dfa : NFA
+    property dfa : DFA
 
     def initialize(nfas : Array(NFA))
       @nfas = nfas.map(&.deep_clone)
@@ -48,8 +48,8 @@ module Kleene
         dfa.accepting_nfa_states.each do |accepting_nfa_state|
           nfa = @nfa_states_to_nfa[accepting_nfa_state]
           matches_for_nfa = matches_per_nfa[nfa] ||= Array(MatchRef).new
-          input_start_index = ???
-          matches_for_nfa << MatchRef.new(input, input_start_offset..index)
+          input_start_index = 0  # ???
+          matches_for_nfa << MatchRef.new(input, input_start_index..index)
         end
       end
       matches_per_nfa

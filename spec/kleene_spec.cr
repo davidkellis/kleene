@@ -107,11 +107,11 @@ describe Kleene do
   end
 end
 
-describe "RegexSet" do
-  it "works" do
-    regex1 = seq(literal("a"), dot)   # /a./
-    regex2 = seq(dot, literal("b"))   # /.b/
-    regex_set = RegexSet.new([regex1, regex2])
-    regex_set.match("abcbazaaabcbzbbbb").should eq([] of MatchRef)
-  end
-end
+# describe "RegexSet" do
+#   it "works" do
+#     regex1 = seq(literal("a"), dot)   # /a./
+#     regex2 = seq(dot, literal("b"))   # /.b/
+#     regex_set = RegexSet.new([regex1, regex2])
+#     regex_set.matches("abcbazaaabcbzbbbb").should eq([] of MatchRef)
+#   end
+# end

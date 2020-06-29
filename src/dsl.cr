@@ -14,7 +14,7 @@ module Kleene
     #                           transition for last character in the string -> state for having observed last character in the string (marked final)
     def literal(token_stream : String, alphabet = DEFAULT_ALPHABET)
       start = current_state = State.new
-      nfa = NFA.new(start, [] of NFATransition, alphabet)
+      nfa = NFA.new(start, alphabet)
       token_stream.each_char do |token|
         next_state = State.new
         nfa.add_transition(token, current_state, next_state)
@@ -29,7 +29,7 @@ module Kleene
     # structure: start state -> transitions for each token in the token collection -> final state
     def any(token_collection, alphabet = DEFAULT_ALPHABET)
       start = State.new
-      nfa = NFA.new(start, [] of NFATransition, alphabet)
+      nfa = NFA.new(start, alphabet)
       final = State.new(true)
       token_collection.each {|token| nfa.add_transition(token, start, final) }
       nfa.update_final_states
@@ -63,7 +63,7 @@ module Kleene
       end
       
       # add all of machine b's transitions to machine a
-      b.transitions.each {|t| a.add_transition(t.token, t.from, t.to) }
+      b.all_transitions.each {|t| a.add_transition(t.token, t.from, t.to) }
       a.final_states = a.final_states | b.final_states
       a.alphabet = a.alphabet | b.alphabet
       
@@ -86,7 +86,7 @@ module Kleene
       end
       
       # add all of machine b's transitions to machine a
-      b.transitions.each {|t| a.add_transition(t.token, t.from, t.to) }
+      b.all_transitions.each {|t| a.add_transition(t.token, t.from, t.to) }
       a.final_states = b.final_states
       a.alphabet = a.alphabet | b.alphabet
       
@@ -108,14 +108,14 @@ module Kleene
     #   b = b.deep_clone
       
     #   start = State.new
-    #   nfa = NFA.new(start, [] of NFATransition, a.alphabet | b.alphabet)
+    #   nfa = NFA.new(start, a.alphabet | b.alphabet)
       
     #   # add epsilon transitions from the start state of the new machine to the start state of machines a and b
     #   nfa.add_transition(NFATransition::Epsilon, start, a.start_state)
     #   nfa.add_transition(NFATransition::Epsilon, start, b.start_state)
       
     #   # add all of a's and b's transitions to the new machine
-    #   (a.transitions + b.transitions).each {|t| nfa.add_transition(t.token, t.from, t.to) }
+    #   (a.all_transitions + b.all_transitions).each {|t| nfa.add_transition(t.token, t.from, t.to) }
     #   nfa.update_final_states
       
     #   nfa
@@ -143,12 +143,12 @@ module Kleene
     def union!(nfas : Array(NFA))
       start = State.new
       composite_alphabet = nfas.map(&.alphabet).reduce {|memo, alphabet| memo | alphabet }
-      new_nfa = NFA.new(start, [] of NFATransition, composite_alphabet)
+      new_nfa = NFA.new(start, composite_alphabet)
       
       # add epsilon transitions from the start state of the new machine to the start state of machines a and b
       nfas.each do |nfa|
         nfa.add_transition(NFATransition::Epsilon, start, nfa.start_state)
-        nfa.transitions.each {|t| new_nfa.add_transition(t.token, t.from, t.to) }
+        nfa.all_transitions.each {|t| new_nfa.add_transition(t.token, t.from, t.to) }
       end
       
       new_nfa.update_final_states
@@ -166,7 +166,7 @@ module Kleene
       start = State.new
       final = State.new(true)
       
-      nfa = NFA.new(start, [] of NFATransition, machine.alphabet)
+      nfa = NFA.new(start, machine.alphabet)
       nfa.add_transition(NFATransition::Epsilon, start, final)
       nfa.add_transition(NFATransition::Epsilon, start, machine.start_state)
       machine.final_states.each do |final_state|
@@ -175,7 +175,7 @@ module Kleene
       end
       
       # add all of machine's transitions to the new machine
-      (machine.transitions).each {|t| nfa.add_transition(t.token, t.from, t.to) }
+      (machine.all_transitions).each {|t| nfa.add_transition(t.token, t.from, t.to) }
       nfa.update_final_states
       
       nfa
@@ -186,12 +186,12 @@ module Kleene
     end
     
     def optional(machine)
-      union(machine, NFA.new(State.new(true), [] of NFATransition, machine.alphabet))
+      union(machine, NFA.new(State.new(true), machine.alphabet))
     end
     
     def repeat(machine, min, max = nil)
       max ||= min
-      m = NFA.new(State.new(true), [] of NFATransition, machine.alphabet)
+      m = NFA.new(State.new(true), machine.alphabet)
       min.times { m = seq(m, machine) }
       (max - min).times { m = append(m, machine) }
       m
