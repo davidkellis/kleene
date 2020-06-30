@@ -113,7 +113,10 @@ module Kleene
       @alphabet << token      # alphabet is a set, so there will be no duplications
       @states << to_state     # states is a set, so there will be no duplications (to_state should be the only new state)
       new_transition = NFATransition.new(token, from_state, to_state)
-      @transitions[from_state][token] = new_transition
+
+      char_transition_map = @transitions[from_state] ||= Hash(Char, NFATransition).new
+      char_transition_map[token] = new_transition
+
       new_transition
     end
     
@@ -167,7 +170,7 @@ module Kleene
       # Build an array of outbound transitions from each state in the epsilon-closure
       # Filter the outbound transitions, selecting only those that accept the input we are given.
       # outbound_transitions = @transitions.select {|t| epsilon_reachable_states.includes?(t.from) && t.accept?(input_token) }
-      outbound_transitions : Array(NFATransition) = epsilon_reachable_states.map {|state| @transitions[state][input_token]? }.compact
+      outbound_transitions : Array(NFATransition) = epsilon_reachable_states.map {|state| @transitions.dig?(state, input_token) }.compact
       
       # Build an array of epsilon-closures of each transition's destination state.
       destination_state_epsilon_closures = outbound_transitions.map {|transition| epsilon_closure([transition.to]) }
@@ -186,7 +189,7 @@ module Kleene
       unvisited_states = state_set
       while !unvisited_states.empty?
         # epsilon_transitions = @transitions.select { |t| t.accept?(NFATransition::Epsilon) && unvisited_states.includes?(t.from) }
-        epsilon_transitions = unvisited_states.map {|state| @transitions[state][NFATransition::Epsilon]? }.compact
+        epsilon_transitions = unvisited_states.map {|state| @transitions.dig?(state, NFATransition::Epsilon) }.compact
         destination_states = epsilon_transitions.map(&.to).to_set
         visited_states.concat(unvisited_states)         # add the unvisited states to the visited_states
         unvisited_states = destination_states - visited_states
@@ -200,7 +203,7 @@ module Kleene
       unvisited_states = Set{@start_state}
       while !unvisited_states.empty?
         # outbound_transitions = @transitions.select { |t| unvisited_states.includes?(t.from) }
-        outbound_transitions = unvisited_states.flat_map {|state| @transitions[state].values }
+        outbound_transitions = unvisited_states.flat_map {|state| @transitions[state]?.try(&.values) || Array(NFATransition).new }
         destination_states = outbound_transitions.map(&.to).to_set
         visited_states.concat(unvisited_states)         # add the unvisited states to the visited_states
         unvisited_states = destination_states - visited_states
@@ -446,7 +449,7 @@ module Kleene
       unvisited_states = Set{@start_state}
       while !unvisited_states.empty?
         # outbound_transitions = @transitions.select { |t| unvisited_states.includes?(t.from) }
-        outbound_transitions = unvisited_states.flat_map {|state| @transitions[state].values }
+        outbound_transitions = unvisited_states.flat_map {|state| @transitions[state]?.try(&.values) || Array(DFATransition).new }
         destination_states = outbound_transitions.map(&.to).to_set
         visited_states.concat(unvisited_states)         # add the unvisited states to the visited_states
         unvisited_states = destination_states - visited_states
