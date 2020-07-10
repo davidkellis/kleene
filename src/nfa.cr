@@ -15,24 +15,28 @@ module Kleene
     def accept?(input)
       @token == input
     end
+
+    def epsilon?
+      token == Epsilon
+    end
   end
 
   class NFA
     property alphabet : Set(Char)
     property states : Set(State)
     property start_state : State
-    property transitions : Hash(State, Hash(Char, NFATransition))
+    property transitions : Hash(State, Hash(Char, Set(NFATransition)))
     property current_states : Set(State)
     property final_states : Set(State)
     
-    def initialize(start_state, alphabet = DEFAULT_ALPHABET, transitions = Hash(State, Hash(Char, NFATransition)).new)
+    def initialize(start_state, alphabet = DEFAULT_ALPHABET, transitions = Hash(State, Hash(Char, Set(NFATransition))).new, initial_states = nil)
       @start_state = start_state
       @transitions = transitions
       
       @alphabet = alphabet
       @alphabet.concat(all_transitions.map(&.token))
       
-      @states = reachable_states
+      @states = initial_states || reachable_states(start_state)
       @current_states = Set(State).new
       @final_states = Set(State).new
 
@@ -41,7 +45,11 @@ module Kleene
     end
 
     def all_transitions() : Array(NFATransition)
-      transitions.flat_map {|state, char_transition_map| char_transition_map.values }
+      transitions.flat_map {|state, char_transition_map| char_transition_map.values.flat_map(&.to_a) }
+    end
+
+    def transitions_from(state) : Set(NFATransition)
+      @transitions[state]?.try(&.values.reduce{|memo, set_of_transisions| memo | set_of_transisions}) || Set(NFATransition).new
     end
     
     def deep_clone
@@ -50,14 +58,17 @@ module Kleene
       state_mapping = old_states.zip(new_states).to_h
       new_transitions = transitions.map {|state, char_transition_map|
         {
-          state, 
-          char_transition_map.map {|char, transition|
-            {char, NFATransition.new(transition.token, state_mapping[transition.from], state_mapping[transition.to])}
+          state_mapping[state], 
+          char_transition_map.map {|char, set_of_transisions|
+            {
+              char, 
+              set_of_transisions.map {|transition| NFATransition.new(transition.token, state_mapping[transition.from], state_mapping[transition.to])}.to_set
+            }
           }.to_h
         }
       }.to_h
       
-      NFA.new(state_mapping[@start_state], @alphabet.clone, new_transitions)
+      NFA.new(state_mapping[@start_state], @alphabet.clone, new_transitions, new_states.to_set)
     end
 
     def update_final_states
@@ -67,28 +78,44 @@ module Kleene
     def reset_current_states
       @current_states = epsilon_closure([@start_state])
     end
-    
-    def add_transition(token, from_state, to_state)
-      @alphabet << token      # alphabet is a set, so there will be no duplications
-      @states << to_state     # states is a set, so there will be no duplications (to_state should be the only new state)
-      new_transition = NFATransition.new(token, from_state, to_state)
 
-      char_transition_map = @transitions[from_state] ||= Hash(Char, NFATransition).new
-      char_transition_map[token] = new_transition
+    def error_states
+      @states.select(&.error?).to_set
+    end
 
-      new_transition
+    def add_state(new_state)
+      @states << new_state
+    end
+
+    def add_states(states)
+      @states.concat(states)
+    end
+
+    def remove_state(state)
+      raise "Unable to remove state from NFA: at least one transition leads to or from the state." if nfa.all_transitions.any? {|transition| transition.from == state || transition.to == state }
+      @states.delete(state)
     end
     
-    def match?(input : String) : MatchRef?
-      reset_current_states
-      
-      input.each_char do |char|
-        self << char
+    def add_transition(token, from_state, to_state)
+      # make sure states EITHER have a single outbound epsilon transition OR non-epsilon outbound transitions; they can't have both
+      if token == NFATransition::Epsilon
+        # make sure from_state doesn't have any outbound non-epsilon transitions
+        raise "Error: Non-epsilon transitions are already present! States may EITHER have a single outbound epsilon transision OR have outbound non-epsilon transitions, but not both." if transitions_from(from_state).any? {|t| !t.epsilon? }
+      else
+        # make sure from_state doesn't have any outbound epsilon transition
+        raise "Error: Epsilon transitions are already present! States may EITHER have a single outbound epsilon transision OR have outbound non-epsilon transitions, but not both." if transitions_from(from_state).any?(&.epsilon?)
       end
-      
-      if accept?
-        MatchRef.new(input, 0...input.size)
-      end
+
+      @alphabet << token      # alphabet is a set, so there will be no duplications
+      @states << from_state
+      @states << to_state
+      new_transition = NFATransition.new(token, from_state, to_state)
+
+      char_transition_map = @transitions[from_state] ||= Hash(Char, Set(NFATransition)).new
+      set_of_transisions = char_transition_map[token] ||= Set(NFATransition).new
+      set_of_transisions << new_transition
+
+      new_transition
     end
     
     # Returns an array of matches found in the input string, each of which begins at the offset input_start_offset
@@ -113,8 +140,25 @@ module Kleene
       end
     end
     
+    def match?(input : String) : MatchRef?
+      # puts "match?(\"#{input}\")"
+      # puts self.to_s
+      reset_current_states
+      
+      # puts @current_states.map(&.id)
+      input.each_char do |char|
+        # puts char
+        self << char
+        # puts @current_states.map(&.id)
+      end
+      
+      if accept?
+        MatchRef.new(input, 0...input.size)
+      end
+    end
+    
     # process another input token
-    def <<(input_token)
+    def <<(input_token : Char)
       @current_states = next_states(@current_states, input_token)
     end
     
@@ -125,11 +169,12 @@ module Kleene
     def next_states(state_set, input_token)
       # Retrieve a list of states in the epsilon closure of the given state set
       epsilon_reachable_states = epsilon_closure(state_set)
+      # puts "epsilon_reachable_states = #{epsilon_reachable_states.map(&.id)}"
       
       # Build an array of outbound transitions from each state in the epsilon-closure
       # Filter the outbound transitions, selecting only those that accept the input we are given.
-      # outbound_transitions = @transitions.select {|t| epsilon_reachable_states.includes?(t.from) && t.accept?(input_token) }
-      outbound_transitions : Array(NFATransition) = epsilon_reachable_states.map {|state| @transitions.dig?(state, input_token) }.compact
+      outbound_transitions : Array(NFATransition) = epsilon_reachable_states.compact_map {|state| @transitions.dig?(state, input_token) }.flat_map(&.to_a)
+      # puts "outbound_transitions = #{outbound_transitions.inspect}"
       
       # Build an array of epsilon-closures of each transition's destination state.
       destination_state_epsilon_closures = outbound_transitions.map {|transition| epsilon_closure([transition.to]) }
@@ -147,8 +192,7 @@ module Kleene
       visited_states = Set(State).new()
       unvisited_states = state_set
       while !unvisited_states.empty?
-        # epsilon_transitions = @transitions.select { |t| t.accept?(NFATransition::Epsilon) && unvisited_states.includes?(t.from) }
-        epsilon_transitions = unvisited_states.map {|state| @transitions.dig?(state, NFATransition::Epsilon) }.compact
+        epsilon_transitions = unvisited_states.compact_map {|state| @transitions.dig?(state, NFATransition::Epsilon) }.flat_map(&.to_a)
         destination_states = epsilon_transitions.map(&.to).to_set
         visited_states.concat(unvisited_states)         # add the unvisited states to the visited_states
         unvisited_states = destination_states - visited_states
@@ -157,12 +201,11 @@ module Kleene
     end
     
     # Returns a set of State objects which are reachable through any transition path from the NFA's start_state.
-    def reachable_states
+    def reachable_states(start_state)
       visited_states = Set(State).new()
-      unvisited_states = Set{@start_state}
+      unvisited_states = Set{start_state}
       while !unvisited_states.empty?
-        # outbound_transitions = @transitions.select { |t| unvisited_states.includes?(t.from) }
-        outbound_transitions = unvisited_states.flat_map {|state| @transitions[state]?.try(&.values) || Array(NFATransition).new }
+        outbound_transitions = unvisited_states.flat_map {|state| @transitions[state]?.try(&.values.flat_map(&.to_a)) || Array(NFATransition).new }
         destination_states = outbound_transitions.map(&.to).to_set
         visited_states.concat(unvisited_states)         # add the unvisited states to the visited_states
         unvisited_states = destination_states - visited_states
@@ -209,29 +252,26 @@ module Kleene
       DFA.new(state_map[nfa_start_state_set], dfa_alphabet, dfa_transitions, state_map.invert)
     end
     
-    # def traverse
-    #   visited_states = Set.new()
-    #   unvisited_states = Set[@start_state]
-    #   begin
-    #     state = unvisited_states.shift
-    #     outbound_transitions = @transitions.select { |t| t.from == state }
-    #     outbound_transitions.each {|t| yield t }
-    #     destination_states = outbound_transitions.map(&.to).to_set
-    #     visited_states << state
-    #     unvisited_states = (unvisited_states | destination_states) - visited_states
-    #   end until unvisited_states.empty?
-    #   nil
-    # end
-    
     def graphviz
       retval = "digraph G { "
       all_transitions.each do |t|
-        retval += "#{t.from.id} -> #{t.to.id} [label=\"#{t.token}\"];"
+        transition_label = t.epsilon? ? "ε" : t.token
+        retval += "#{t.from.id} -> #{t.to.id} [label=\"#{transition_label}\"];"
       end
       @final_states.each do |s|
         retval += "#{s.id} [color=lightblue2, style=filled, shape=doublecircle];"
       end
       retval += " }"
+      retval
+    end
+
+    def to_s
+      retval = states.map(&.to_s).join("\n")
+      retval += "\n"
+      all_transitions.each do |t|
+        transition_label = t.epsilon? ? "ε" : t.token
+        retval += "#{t.from.id} -> #{transition_label} -> #{t.to.id}\n"
+      end
       retval
     end
   end

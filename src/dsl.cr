@@ -49,27 +49,67 @@ module Kleene
     
     ############### The following methods create FSAs given other FSAs #################
     
+    # always clones the given nfa and returns a new nfa with a non-final error state
+    def with_err(nfa, alphabet = nfa.alphabet)
+      with_err!(nfa.deep_clone, alphabet)
+    end
+
+    def with_err!(nfa, alphabet = nfa.alphabet)
+      error_state = nfa.find(&.error?)
+      return nfa if error_state
+
+      error_state = State.new_error_state
+      nfa.add_state(error_state)
+
+      nfa.states.each do |state|
+        tokens_on_outbound_transitions = nfa.transitions_from(state).map(&.token)
+        missing_tokens = alphabet - tokens_on_outbound_transitions
+        missing_tokens.each do |token|
+          nfa.add_transition(token, state, error_state)
+        end
+      end
+
+      nfa.remove_state(error_state) if nfa.all_transitions.none? {|transition| transition.from == error_state || transition.to == error_state }
+      
+      nfa
+    end
+
     # Append b onto a
     # Appending produces a machine that matches all the strings in machine a followed by all the strings in machine b.
     # This differs from `seq` in that the composite machine's final states are the union of machine a's final states and machine b's final states.
     def append(a, b)
       a = a.deep_clone
       b = b.deep_clone
-      
+      append!(a, b)
+    end
+
+    # Destructively append b onto a
+    # Appending produces a machine that matches all the strings in machine a followed by all the strings in machine b.
+    # This differs from `seq` in that the composite machine's final states are the union of machine a's final states and machine b's final states.
+    def append!(a, b)
+      a.alphabet = a.alphabet | b.alphabet
+
       # add an epsilon transition from each final state of machine a to the start state of maachine b.
-      # then mark each of a's final states as not final
       a.final_states.each do |final_state|
         a.add_transition(NFATransition::Epsilon, final_state, b.start_state)
       end
       
       # add all of machine b's transitions to machine a
-      b.all_transitions.each {|t| a.add_transition(t.token, t.from, t.to) }
-      a.final_states = a.final_states | b.final_states
-      a.alphabet = a.alphabet | b.alphabet
+      b.all_transitions.each {|transition| a.add_transition(transition.token, transition.from, transition.to) }
+      # a.final_states = a.final_states | b.final_states
+      a.update_final_states
       
       a
     end
     
+    def seq(*nfa_splat_tuple)
+      seq(nfa_splat_tuple.to_a)
+    end
+
+    def seq(nfas : Array(NFA))
+      nfas.reduce {|memo_nfa, nfa| seq(memo_nfa, nfa) }
+    end
+
     # Implements concatenation, as defined in the Ragel manual in section 2.5.5 of http://www.colm.net/files/ragel/ragel-guide-6.10.pdf:
     # Seq produces a machine that matches all the strings in machine `a` followed by all the strings in machine `b`.
     # Seq draws epsilon transitions from the final states of thefirst machine to the start state of the second machine.
@@ -78,52 +118,17 @@ module Kleene
       a = a.deep_clone
       b = b.deep_clone
       
-      # add an epsilon transition from each final state of machine a to the start state of maachine b.
-      # then mark each of a's final states as not final
-      a.final_states.each do |final_state|
-        a.add_transition(NFATransition::Epsilon, final_state, b.start_state)
-        final_state.final = false
-      end
+      a = append!(a, b)
       
-      # add all of machine b's transitions to machine a
-      b.all_transitions.each {|t| a.add_transition(t.token, t.from, t.to) }
-      a.final_states = b.final_states
-      a.alphabet = a.alphabet | b.alphabet
+      # make sure that b's final states are the only final states in a after we have appended b onto a
+      a.states.each {|state| state.final = b.final_states.includes?(state) }
+      a.update_final_states
       
       a
     end
 
-    def seq(*nfa_splat_tuple)
-      nfas = nfa_splat_tuple.to_a.map(&.deep_clone)
-      seq(nfas)
-    end
-
-    def seq(nfas : Array(NFA))
-      nfas.reduce {|memo_nfa, nfa| seq(memo_nfa, nfa) }
-    end
-    
-    # this was the first implementation of union
-    # def union(a, b)
-    #   a = a.deep_clone
-    #   b = b.deep_clone
-      
-    #   start = State.new
-    #   nfa = NFA.new(start, a.alphabet | b.alphabet)
-      
-    #   # add epsilon transitions from the start state of the new machine to the start state of machines a and b
-    #   nfa.add_transition(NFATransition::Epsilon, start, a.start_state)
-    #   nfa.add_transition(NFATransition::Epsilon, start, b.start_state)
-      
-    #   # add all of a's and b's transitions to the new machine
-    #   (a.all_transitions + b.all_transitions).each {|t| nfa.add_transition(t.token, t.from, t.to) }
-    #   nfa.update_final_states
-      
-    #   nfa
-    # end
-
     def union(*nfa_splat_tuple)
-      nfas = nfa_splat_tuple.to_a
-      union(nfas)
+      union(nfa_splat_tuple.to_a)
     end
 
     # Build a new machine consisting of a new start state with epsilon transitions to the start state of all the given NFAs in `nfas`.
@@ -147,7 +152,8 @@ module Kleene
       
       # add epsilon transitions from the start state of the new machine to the start state of machines a and b
       nfas.each do |nfa|
-        nfa.add_transition(NFATransition::Epsilon, start, nfa.start_state)
+        new_nfa.add_states(nfa.states)
+        new_nfa.add_transition(NFATransition::Epsilon, start, nfa.start_state)
         nfa.all_transitions.each {|t| new_nfa.add_transition(t.token, t.from, t.to) }
       end
       
@@ -167,6 +173,7 @@ module Kleene
       final = State.new(true)
       
       nfa = NFA.new(start, machine.alphabet)
+      nfa.add_states(machine.states)
       nfa.add_transition(NFATransition::Epsilon, start, final)
       nfa.add_transition(NFATransition::Epsilon, start, machine.start_state)
       machine.final_states.each do |final_state|

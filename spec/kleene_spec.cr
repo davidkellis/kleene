@@ -5,37 +5,37 @@ include DSL
 
 describe Kleene do
   describe "nfa" do
-    it "works" do
-      # create some states with which to manually construct an NFA
-      start = State.new
-      a = State.new
-      b1 = State.new
-      b2 = State.new
-      c = State.new(true)
-    
-      # build an NFA to match "abbc"
-      nfa = NFA.new(start)
-      nfa.add_transition('a', start, a)
-      nfa.add_transition('b', a, b1)
-      nfa.add_transition('b', b1, b2)
-      nfa.add_transition('c', b2, c)
-    
-      # run the NFA
+    it "matches string literals" do
+      # /abbc/
+      nfa = literal("abbc")
       nfa.match?("abc").should be_nil
       nfa.match?("").should be_nil
       nfa.match?("abbcc").should be_nil
       nfa.match?("abbc").should be_truthy
+    end
 
+    it "matches sequences of string literals" do
+      # /(a)(b)/
+      nfa = seq(literal("a"), literal("b"))
+      nfa.match?("a").should be_nil
+      nfa.match?("ab").should be_truthy
+      nfa.match?("abc").should be_nil
+      nfa.match?("").should be_nil
+      nfa.match?("abbcc").should be_nil
+    end
 
-      # build an NFA to match "abb?c"
-      nfa = NFA.new(start)
-      nfa.add_transition('a', start, a)
-      nfa.add_transition('b', a, b1)
-      nfa.add_transition(NFATransition::Epsilon, a, b1)
-      nfa.add_transition('b', b1, b2)
-      nfa.add_transition('c', b2, c)
-    
-      # run the NFA
+    it "matches unions of string literals" do
+      # /a|b/
+      nfa = union(literal("a"), literal("b"))
+      nfa.match?("a").should be_truthy
+      nfa.match?("b").should be_truthy
+      nfa.match?("c").should be_nil
+      nfa.match?("").should be_nil
+    end
+
+    it "matches sequences of string literals and unions" do
+      # /abb?c/
+      nfa = seq(literal("ab"), optional(literal("b")), literal("c"))
       nfa.match?("abc").should be_truthy
       nfa.match?("").should be_nil
       nfa.match?("abbcc").should be_nil
@@ -52,42 +52,61 @@ describe Kleene do
       matches[1].match.should eq "abc"
       matches[2].match.should eq "abbc"
     end
+
+    it "matches kleene start operator" do
+      # /ab*c/
+      nfa = seq(literal("a"), kleene(literal("b")), literal("c"))
+      nfa.match?("a").should be_nil
+      nfa.match?("b").should be_nil
+      nfa.match?("c").should be_nil
+      nfa.match?("").should be_nil
+      nfa.match?("aa").should be_nil
+      nfa.match?("ab").should be_nil
+      nfa.match?("ac").should be_truthy
+      nfa.match?("abc").should be_truthy
+      nfa.match?("abbc").should be_truthy
+      nfa.match?("abbbbbbbbbbbbbbbbbbbbbbbbc").should be_truthy
+      nfa.match?("bc").should be_nil
+      nfa.match?("bbbbc").should be_nil
+    end
   end
 
   describe "dfa" do
-    it "works" do
-      # create some states with which to manually construct an NFA and a DFA
-      start = State.new
-      a = State.new
-      b1 = State.new
-      b2 = State.new
-      c = State.new(true)
-    
-      # build a DFA to match "abbc"
-      nfa = NFA.new(start)
-      nfa.add_transition('a', start, a)
-      nfa.add_transition('b', a, b1)
-      nfa.add_transition('b', b1, b2)
-      nfa.add_transition('c', b2, c)
+    it "matches string literals" do
+      # /abbc/
+      nfa = literal("abbc")
       dfa = nfa.to_dfa
-    
-      # run the DFA
       dfa.match?("abc").should be_nil
       dfa.match?("").should be_nil
       dfa.match?("abbcc").should be_nil
       dfa.match?("abbc").should be_truthy
-      
+    end
 
-      # build a DFA to match "abb?c"
-      nfa = NFA.new(start)
-      nfa.add_transition('a', start, a)
-      nfa.add_transition('b', a, b1)
-      nfa.add_transition(NFATransition::Epsilon, a, b1)
-      nfa.add_transition('b', b1, b2)
-      nfa.add_transition('c', b2, c)
+    it "matches sequences of string literals" do
+      # /(a)(b)/
+      nfa = seq(literal("a"), literal("b"))
       dfa = nfa.to_dfa
+      dfa.match?("a").should be_nil
+      dfa.match?("ab").should be_truthy
+      dfa.match?("abc").should be_nil
+      dfa.match?("").should be_nil
+      dfa.match?("abbcc").should be_nil
+    end
 
-      # run the DFA
+    it "matches unions of string literals" do
+      # /a|b/
+      nfa = union(literal("a"), literal("b"))
+      dfa = nfa.to_dfa
+      dfa.match?("a").should be_truthy
+      dfa.match?("b").should be_truthy
+      dfa.match?("c").should be_nil
+      dfa.match?("").should be_nil
+    end
+
+    it "matches sequences of string literals and unions" do
+      # /abb?c/
+      nfa = seq(literal("ab"), optional(literal("b")), literal("c"))
+      dfa = nfa.to_dfa
       dfa.match?("abc").should be_truthy
       dfa.match?("").should be_nil
       dfa.match?("abbcc").should be_nil
@@ -104,14 +123,33 @@ describe Kleene do
       matches[1].match.should eq "abc"
       matches[2].match.should eq "abbc"
     end
+
+    it "matches kleene start operator" do
+      # /ab*c/
+      nfa = seq(literal("a"), kleene(literal("b")), literal("c"))
+      dfa = nfa.to_dfa
+      dfa.match?("a").should be_nil
+      dfa.match?("b").should be_nil
+      dfa.match?("c").should be_nil
+      dfa.match?("").should be_nil
+      dfa.match?("aa").should be_nil
+      dfa.match?("ab").should be_nil
+      dfa.match?("ac").should be_truthy
+      dfa.match?("abc").should be_truthy
+      dfa.match?("abbc").should be_truthy
+      dfa.match?("abbbbbbbbbbbbbbbbbbbbbbbbc").should be_truthy
+      dfa.match?("bc").should be_nil
+      dfa.match?("bbbbc").should be_nil
+    end
   end
+
 end
 
-# describe "RegexSet" do
+# describe "MultiMatchDFA" do
 #   it "works" do
 #     regex1 = seq(literal("a"), dot)   # /a./
 #     regex2 = seq(dot, literal("b"))   # /.b/
-#     regex_set = RegexSet.new([regex1, regex2])
-#     regex_set.matches("abcbazaaabcbzbbbb").should eq([] of MatchRef)
+#     mmdfa = MultiMatchDFA.new([regex1, regex2])
+#     mmdfa.matches("abcbazaaabcbzbbbb").should eq([] of MatchRef)
 #   end
 # end

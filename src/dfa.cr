@@ -15,6 +15,7 @@ module Kleene
     end
   end
   
+  alias DFATransitionCallback = Proc(DFATransition, Void)
 
   class DFA
     property alphabet : Set(Char)
@@ -24,8 +25,9 @@ module Kleene
     property transitions : Hash(State, Hash(Char, DFATransition))
     property final_states : Set(State)
     property dfa_state_to_nfa_state_sets : Hash(State, Set(State))            # this map contains (dfa_state => nfa_state_set) pairs
+    property transition_callbacks : Hash(DFATransition, DFATransitionCallback)
     
-    def initialize(start_state, alphabet = DEFAULT_ALPHABET, transitions = Hash(State, Hash(Char, DFATransition)).new, @dfa_state_to_nfa_state_sets = Hash(State, Set(State)).new)
+    def initialize(start_state, alphabet = DEFAULT_ALPHABET, transitions = Hash(State, Hash(Char, DFATransition)).new, @dfa_state_to_nfa_state_sets = Hash(State, Set(State)).new, transition_callbacks = nil)
       @start_state = start_state
       @current_state = start_state
       @transitions = transitions
@@ -36,6 +38,8 @@ module Kleene
       @states = reachable_states
       @final_states = Set(State).new
 
+      @transition_callbacks = transition_callbacks || Hash(DFATransition, DFATransitionCallback).new
+
       update_final_states
       reset_current_state
     end
@@ -44,23 +48,35 @@ module Kleene
       transitions.flat_map {|state, char_transition_map| char_transition_map.values }
     end
 
+    def on_transition(transition, &blk : DFATransition -> Void)
+      @transition_callbacks[transition] = blk
+    end
+
     def deep_clone
       old_states = @states.to_a
       new_states = old_states.map(&.dup)
       state_mapping = old_states.zip(new_states).to_h
-      # new_transitions = @transitions.map {|t| DFATransition.new(t.token, state_mapping[t.from], state_mapping[t.to]) }
-      new_transitions = transitions.map {|state, char_transition_map|
+      transition_mapping = Hash(DFATransition, DFATransition).new
+      new_transitions = transitions.map do |state, char_transition_map|
         {
           state, 
-          char_transition_map.map {|char, transition|
-            {char, DFATransition.new(transition.token, state_mapping[transition.from], state_mapping[transition.to])}
-          }.to_h
+          char_transition_map.map do |char, old_transition|
+            new_transition = DFATransition.new(old_transition.token, state_mapping[old_transition.from], state_mapping[old_transition.to])
+            transition_mapping[old_transition] = new_transition
+            {char, new_transition}
+          end.to_h
         }
-      }.to_h
+      end.to_h
+      new_transition_callbacks = transition_callbacks.map do |transition, callback|
+        {
+          transition_mapping[transition],
+          callback
+        }
+      end.to_h
 
       new_dfa_state_to_nfa_state_sets = dfa_state_to_nfa_state_sets.map {|dfa_state, nfa_state_set| {state_mapping[dfa_state], nfa_state_set} }.to_h
       
-      DFA.new(state_mapping[@start_state], @alphabet.clone, new_transitions, new_dfa_state_to_nfa_state_sets)
+      DFA.new(state_mapping[@start_state], @alphabet.clone, new_transitions, new_dfa_state_to_nfa_state_sets, new_transition_callbacks)
     end
 
     def update_final_states

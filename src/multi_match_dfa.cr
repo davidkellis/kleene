@@ -1,7 +1,7 @@
 require "./kleene.cr"
 
 module Kleene
-  class RegexSet
+  class MultiMatchDFA
     include DSL
 
     property nfas : Array(NFA)
@@ -10,7 +10,9 @@ module Kleene
     property dfa : DFA
 
     def initialize(nfas : Array(NFA))
-      @nfas = nfas.map(&.deep_clone)
+      composite_alphabet = nfas.reduce(Set(Char).new) {|memo, nfa| memo | nfa.alphabet }
+
+      @nfas = nfas.map {|nfa| with_err(nfa, composite_alphabet) }
 
       # build a mapping of (state -> nfa) pairs that capture which nfa owns each state
       @nfa_states_to_nfa = Hash(State, NFA).new
@@ -42,6 +44,7 @@ module Kleene
 
     def matches(input : String) : Hash(NFA, Array(MatchRef))
       dfa = @dfa.deep_clone
+      setup_callbacks(dfa)
       matches_per_nfa = Hash(NFA, Array(MatchRef)).new
       input.each_char_with_index do |char, index|
         dfa << char
@@ -54,5 +57,10 @@ module Kleene
       end
       matches_per_nfa
     end
+
+    def setup_callbacks(dfa)
+      dfa.on_transition()
+    end
+
   end
 end

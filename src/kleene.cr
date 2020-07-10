@@ -24,21 +24,35 @@ module Kleene
       @@next_id += 1
     end
 
+    def self.new_error_state(final = false)
+      State.new(final, true)
+    end
+
 
     getter id : Int32
     property final : Bool
+    property error : Bool
 
-    def initialize(final = false, id : Int32? = nil)
+    def initialize(@final = false, @error = false, id : Int32? = nil)
       @id = id || State.next_id
-      @final = final
     end
 
+    # is this an error state?
+    def error?
+      @error
+    end
+
+    # is this a final state?
     def final?
       @final
     end
     
     def dup
-      State.new(@final, nil)
+      State.new(@final, @error, nil)
+    end
+
+    def to_s
+      "State{id: #{id}, final: #{final}, error: #{error}}"
     end
   end
 
