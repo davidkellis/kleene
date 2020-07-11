@@ -48,8 +48,11 @@ module Kleene
       transitions.flat_map {|state, char_transition_map| char_transition_map.values.flat_map(&.to_a) }
     end
 
-    def transitions_from(state) : Set(NFATransition)
+    def transitions_from(state : State) : Set(NFATransition)
       @transitions[state]?.try(&.values.reduce{|memo, set_of_transisions| memo | set_of_transisions}) || Set(NFATransition).new
+    end
+    def transitions_from(state_set : Set(State)) : Set(NFATransition)
+      state_set.map {|state| transitions_from(state) }.reduce {|memo, state_set| memo | state_set }
     end
     
     def deep_clone
@@ -125,7 +128,7 @@ module Kleene
       matches = [] of MatchRef
       (input_start_offset...input.size).each do |offset|
         token = input[offset]
-        self << token
+        accept_token!(token)
         if accept?
           matches << MatchRef.new(input, input_start_offset..offset)
         end
@@ -146,9 +149,9 @@ module Kleene
       reset_current_states
       
       # puts @current_states.map(&.id)
-      input.each_char do |char|
+      input.each_char_with_index do |char, index|
         # puts char
-        self << char
+        accept_token!(char)
         # puts @current_states.map(&.id)
       end
       
@@ -158,7 +161,7 @@ module Kleene
     end
     
     # process another input token
-    def <<(input_token : Char)
+    def accept_token!(input_token : Char)
       @current_states = next_states(@current_states, input_token)
     end
     
@@ -188,7 +191,10 @@ module Kleene
     # Determine the epsilon closure of the given state set
     # That is, determine what states are reachable on an epsilon transition from the current state set (@current_states).
     # Returns a Set of State objects.
-    def epsilon_closure(state_set) : Set(State)
+    def epsilon_closure(state : State)
+      epsilon_closure(Set{state})
+    end
+    def epsilon_closure(state_set : Set(State)) : Set(State)
       visited_states = Set(State).new()
       unvisited_states = state_set
       while !unvisited_states.empty?

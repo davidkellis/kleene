@@ -15,7 +15,8 @@ module Kleene
     end
   end
   
-  alias DFATransitionCallback = Proc(DFATransition, Void)
+  # ->(transition : DFATransition, token : Char, token_index : Int32) : Void { ... }
+  alias DFATransitionCallback = Proc(DFATransition, Char, Int32, Void)
 
   class DFA
     property alphabet : Set(Char)
@@ -25,7 +26,9 @@ module Kleene
     property transitions : Hash(State, Hash(Char, DFATransition))
     property final_states : Set(State)
     property dfa_state_to_nfa_state_sets : Hash(State, Set(State))            # this map contains (dfa_state => nfa_state_set) pairs
+    property nfa_state_to_dfa_state_sets : Hash(State, Set(State))            # this map contains (nfa_state => dfa_state_set) pairs
     property transition_callbacks : Hash(DFATransition, DFATransitionCallback)
+    property transition_callbacks_per_destination_state : Hash(State, DFATransitionCallback)
     
     def initialize(start_state, alphabet = DEFAULT_ALPHABET, transitions = Hash(State, Hash(Char, DFATransition)).new, @dfa_state_to_nfa_state_sets = Hash(State, Set(State)).new, transition_callbacks = nil)
       @start_state = start_state
@@ -38,7 +41,16 @@ module Kleene
       @states = reachable_states
       @final_states = Set(State).new
 
+      @nfa_state_to_dfa_state_sets = Hash(State, Set(State)).new
+      @dfa_state_to_nfa_state_sets.each do |dfa_state, nfa_state_set|
+        nfa_state_set.each do |nfa_state|
+          dfa_state_set = @nfa_state_to_dfa_state_sets[nfa_state] ||= Set(State).new
+          dfa_state_set << dfa_state
+        end
+      end
+
       @transition_callbacks = transition_callbacks || Hash(DFATransition, DFATransitionCallback).new
+      @transition_callbacks_per_destination_state = Hash(State, DFATransitionCallback).new
 
       update_final_states
       reset_current_state
@@ -48,10 +60,15 @@ module Kleene
       transitions.flat_map {|state, char_transition_map| char_transition_map.values }
     end
 
-    def on_transition(transition, &blk : DFATransition -> Void)
+    def on_transition(transition, &blk : DFATransitionCallback)
       @transition_callbacks[transition] = blk
     end
 
+    def on_transition_to(state, &blk : DFATransitionCallback)
+      @transition_callbacks_per_destination_state[state] = blk
+    end
+
+    # transition callbacks are not copied beacuse it is assumed that the state transition callbacks may be stateful and reference structures or states that only exist in `self`, but not the cloned copy.
     def deep_clone
       old_states = @states.to_a
       new_states = old_states.map(&.dup)
@@ -67,16 +84,16 @@ module Kleene
           end.to_h
         }
       end.to_h
-      new_transition_callbacks = transition_callbacks.map do |transition, callback|
-        {
-          transition_mapping[transition],
-          callback
-        }
-      end.to_h
+      # new_transition_callbacks = transition_callbacks.map do |transition, callback|
+      #   {
+      #     transition_mapping[transition],
+      #     callback
+      #   }
+      # end.to_h
 
       new_dfa_state_to_nfa_state_sets = dfa_state_to_nfa_state_sets.map {|dfa_state, nfa_state_set| {state_mapping[dfa_state], nfa_state_set} }.to_h
       
-      DFA.new(state_mapping[@start_state], @alphabet.clone, new_transitions, new_dfa_state_to_nfa_state_sets, new_transition_callbacks)
+      DFA.new(state_mapping[@start_state], @alphabet.clone, new_transitions, new_dfa_state_to_nfa_state_sets)
     end
 
     def update_final_states
@@ -98,8 +115,8 @@ module Kleene
     def match?(input : String)
       reset_current_state
       
-      input.each_char do |char|
-        self << char
+      input.each_char_with_index do |char, index|
+        accept_token!(char, index)
       end
       
       if accept?
@@ -114,7 +131,7 @@ module Kleene
       matches = [] of MatchRef
       (input_start_offset...input.size).each do |offset|
         token = input[offset]
-        self << token
+        accept_token!(token, offset)
         if accept?
           matches << MatchRef.new(input, input_start_offset..offset)
         end
@@ -129,9 +146,9 @@ module Kleene
       end
     end
     
-    # process another input token
-    def <<(input_token)
-      @current_state = next_state(@current_state, input_token)
+    # accept an input token and transition to the next state in the state machine
+    def accept_token!(input_token, token_index)
+      @current_state = next_state(@current_state, input_token, token_index)
     end
     
     def accept?
@@ -139,17 +156,22 @@ module Kleene
     end
 
     # if the DFA is currently in a final state, then we look up the associated NFA states that were also final, and return them
-    def accepting_nfa_states : Set(State)
-      if accept?
-        dfa_state_to_nfa_state_sets[@current_state].select(&.final?).to_set
-      else
-        Set(State).new
-      end
-    end
+    # def accepting_nfa_states : Set(State)
+    #   if accept?
+    #     dfa_state_to_nfa_state_sets[@current_state].select(&.final?).to_set
+    #   else
+    #     Set(State).new
+    #   end
+    # end
     
-    def next_state(from_state, input_token)
-      # t = @transitions.find {|t| state == t.from && t.accept?(input_token) } || raise "No DFA transition found!"
+    # this function transitions from state to state on an input token
+    def next_state(from_state, input_token, token_index)
       transition = @transitions[from_state][input_token]? || raise "No DFA transition found!"
+      
+      # invoke the relevant transition callback function
+      transition_callbacks[transition]?.try {|callback_fn| callback_fn.call(transition, input_token, token_index) }
+      transition_callbacks_per_destination_state[transition.to]?.try {|callback_fn| callback_fn.call(transition, input_token, token_index) }
+      
       transition.to
     end
 
