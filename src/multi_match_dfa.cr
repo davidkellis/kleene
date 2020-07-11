@@ -73,6 +73,7 @@ module Kleene
       nfas_that_have_matched_their_first_character = Hash(State, Array(NFA)).new
       dfa_states_that_correspond_to_successful_match_of_first_character_of_component_nfa.each do |dfa_state|
         nfas_that_have_matched_their_first_character[dfa_state] = dfa_state_to_nfa_state_sets[dfa_state].map {|nfa_state| nfa_states_to_nfa[nfa_state] }.uniq
+      
         dfa.on_transition_to(dfa_state, ->(transition : DFATransition, token : Char, token_index : Int32) {
           nfas_that_have_matched_their_first_character[transition.to].each do |nfa|
             match_tracker.add_start_of_candidate_match(nfa, token_index)
@@ -91,6 +92,11 @@ module Kleene
   class NonOverlappingMatchTracker
     property start_of_match_stack : Hash(NFA, Array(Int32))     # NFA -> Array(IndexPositionOfStartOfMatch)
     property matches : Hash(NFA, Array(MatchRef))  # NFA -> Array(MatchRef)
+
+    def initialize
+      @start_of_match_stack = Hash(NFA, Array(Int32)).new
+      @matches = Hash(NFA, Array(MatchRef)).new
+    end
 
     def add_start_of_candidate_match(nfa, token_index)
       match_stack = start_of_match_stack[nfa] ||= Array(Int32).new

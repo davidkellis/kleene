@@ -79,7 +79,7 @@ module Kleene
     end
     
     def reset_current_states
-      @current_states = epsilon_closure([@start_state])
+      @current_states = epsilon_closure(@start_state)
     end
 
     def error_states
@@ -180,7 +180,7 @@ module Kleene
       # puts "outbound_transitions = #{outbound_transitions.inspect}"
       
       # Build an array of epsilon-closures of each transition's destination state.
-      destination_state_epsilon_closures = outbound_transitions.map {|transition| epsilon_closure([transition.to]) }
+      destination_state_epsilon_closures = outbound_transitions.map {|transition| epsilon_closure(transition.to) }
       
       # Union each of the epsilon-closures (each is a set) together to form a flat array of states in the epsilon-closure of all of our current states.
       next_states = destination_state_epsilon_closures.reduce? {|combined_state_set, individual_state_set| combined_state_set.concat(individual_state_set) }
@@ -191,7 +191,7 @@ module Kleene
     # Determine the epsilon closure of the given state set
     # That is, determine what states are reachable on an epsilon transition from the current state set (@current_states).
     # Returns a Set of State objects.
-    def epsilon_closure(state : State)
+    def epsilon_closure(state : State) : Set(State)
       epsilon_closure(Set{state})
     end
     def epsilon_closure(state_set : Set(State)) : Set(State)
@@ -226,7 +226,7 @@ module Kleene
       dfa_transitions = Hash(State, Hash(Char, DFATransition)).new
       dfa_alphabet = @alphabet - Set{NFATransition::Epsilon}
       visited_state_sets = Set(Set(State)).new()
-      nfa_start_state_set : Set(State) = epsilon_closure([@start_state])
+      nfa_start_state_set : Set(State) = epsilon_closure(@start_state)
       unvisited_state_sets : Set(Set(State)) = Set{nfa_start_state_set}
 
       dfa_start_state = State.new(nfa_start_state_set.any?(&.final?))
