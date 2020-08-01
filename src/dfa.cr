@@ -15,8 +15,8 @@ module Kleene
     end
   end
   
-  # ->(transition : DFATransition, token : Char, token_index : Int32) : Void { ... }
-  alias DFATransitionCallback = Proc(DFATransition, Char, Int32, Void)
+  # ->(transition : DFATransition, token : Char, token_index : Int32) : Nil { ... }
+  alias DFATransitionCallback = Proc(DFATransition, Char, Int32, Nil)
 
   class DFA
     property alphabet : Set(Char)
@@ -38,7 +38,7 @@ module Kleene
       @alphabet = alphabet
       @alphabet.concat(all_transitions.map(&.token))
       
-      @states = reachable_states
+      @states = reachable_states(@start_state)
       @final_states = Set(State).new
 
       @nfa_state_to_dfa_state_sets = Hash(State, Set(State)).new
@@ -76,7 +76,7 @@ module Kleene
       transition_mapping = Hash(DFATransition, DFATransition).new
       new_transitions = transitions.map do |state, char_transition_map|
         {
-          state, 
+          state_mapping[state], 
           char_transition_map.map do |char, old_transition|
             new_transition = DFATransition.new(old_transition.token, state_mapping[old_transition.from], state_mapping[old_transition.to])
             transition_mapping[old_transition] = new_transition
@@ -116,7 +116,7 @@ module Kleene
       reset_current_state
       
       input.each_char_with_index do |char, index|
-        accept_token!(char, index)
+        handle_token!(char, index)
       end
       
       if accept?
@@ -131,7 +131,7 @@ module Kleene
       matches = [] of MatchRef
       (input_start_offset...input.size).each do |offset|
         token = input[offset]
-        accept_token!(token, offset)
+        handle_token!(token, offset)
         if accept?
           matches << MatchRef.new(input, input_start_offset..offset)
         end
@@ -147,7 +147,7 @@ module Kleene
     end
     
     # accept an input token and transition to the next state in the state machine
-    def accept_token!(input_token, token_index)
+    def handle_token!(input_token, token_index)
       @current_state = next_state(@current_state, input_token, token_index)
     end
     
@@ -166,7 +166,7 @@ module Kleene
     
     # this function transitions from state to state on an input token
     def next_state(from_state, input_token, token_index)
-      transition = @transitions[from_state][input_token]? || raise "No DFA transition found!"
+      transition = @transitions[from_state][input_token]? || raise "No DFA transition found. Input token #{input_token} not in DFA alphabet."
       
       # invoke the relevant transition callback function
       transition_callbacks[transition]?.try {|callback_fn| callback_fn.call(transition, input_token, token_index) }
@@ -175,12 +175,11 @@ module Kleene
       transition.to
     end
 
-    # Returns a set of State objects which are reachable through any transition path from the NFA's start_state.
-    def reachable_states
+    # Returns a set of State objects which are reachable through any transition path from the DFA's start_state.
+    def reachable_states(start_state)
       visited_states = Set(State).new()
-      unvisited_states = Set{@start_state}
+      unvisited_states = Set{start_state}
       while !unvisited_states.empty?
-        # outbound_transitions = @transitions.select { |t| unvisited_states.includes?(t.from) }
         outbound_transitions = unvisited_states.flat_map {|state| @transitions[state]?.try(&.values) || Array(DFATransition).new }
         destination_states = outbound_transitions.map(&.to).to_set
         visited_states.concat(unvisited_states)         # add the unvisited states to the visited_states
@@ -188,7 +187,7 @@ module Kleene
       end
       visited_states
     end
-    
+
     # this is currently broken
     # def to_nfa
     #   dfa = self.deep_clone
@@ -197,6 +196,15 @@ module Kleene
     #   # @transitions.each {|t| nfa.add_transition(t.token, t.from, t.to) }
     #   # nfa
     # end
+
+    def to_s
+      retval = states.map(&.to_s).join("\n")
+      retval += "\n"
+      all_transitions.each do |t|
+        retval += "#{t.from.id} -> #{t.token} -> #{t.to.id}\n"
+      end
+      retval
+    end
     
     # This is an implementation of the "Reducing a DFA to a Minimal DFA" algorithm presented here: http://web.cecs.pdx.edu/~harry/compilers/slides/LexicalPart4.pdf
     # This implements Hopcroft's algorithm as presented on page 142 of the first edition of the dragon book.

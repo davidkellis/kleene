@@ -145,11 +145,17 @@ describe Kleene do
 
 end
 
-# describe "MultiMatchDFA" do
-#   it "works" do
-#     regex1 = seq(literal("a"), dot)   # /a./
-#     regex2 = seq(dot, literal("b"))   # /.b/
-#     mmdfa = MultiMatchDFA.new([regex1, regex2])
-#     mmdfa.matches("abcbazaaabcbzbbbb").should eq([] of MatchRef)
-#   end
-# end
+describe "MultiMatchDFA" do
+  it "works" do
+    alphabet = Set{'a', 'b', 'z'}
+    regex1 = seq(literal("a", alphabet), dot(alphabet))   # /a./
+    regex2 = seq(dot(alphabet), literal("b", alphabet))   # /.b/
+    mmdfa = MultiMatchDFA.new([regex1, regex2])
+    mt = mmdfa.matches("abzbazaaabzbzbbbb")
+    puts "start positions"
+    mt.candidate_match_start_positions.each {|nfa, indices| puts mmdfa.nfa_to_nfa_index[nfa]; puts indices }
+    puts "end positions"
+    mt.match_end_positions.each {|nfa, indices| puts mmdfa.nfa_to_nfa_index[nfa]; puts indices }
+    # mmdfa.matches("abzbazaaabzbzbbbb").should eq([] of MatchRef)
+  end
+end

@@ -39,7 +39,7 @@ module Kleene
     # two states: start state and final state
     # structure: start state -> transitions for every token in the alphabet -> final state
     def dot(alphabet = DEFAULT_ALPHABET)
-      any(alphabet)
+      any(alphabet, alphabet)
     end
     
     # This implements a character class, and is specifically for use with matching strings
@@ -54,8 +54,10 @@ module Kleene
       with_err!(nfa.deep_clone, alphabet)
     end
 
+    # adds and error state to the NFA, create error transitions from all non-error states to the error state on any unhandled token.
+    # the error state transitions to itself on any token.
     def with_err!(nfa, alphabet = nfa.alphabet)
-      error_state = nfa.find(&.error?)
+      error_state = nfa.states.find(&.error?)
       return nfa if error_state
 
       error_state = State.new_error_state
@@ -66,6 +68,38 @@ module Kleene
         missing_tokens = alphabet - tokens_on_outbound_transitions
         missing_tokens.each do |token|
           nfa.add_transition(token, state, error_state)
+        end
+      end
+
+      nfa.remove_state(error_state) if nfa.all_transitions.none? {|transition| transition.from == error_state || transition.to == error_state }
+      
+      nfa
+    end
+
+    # always clones the given nfa and returns a new nfa with a non-final error state
+    def with_err_dead_end(nfa, alphabet = nfa.alphabet)
+      with_err_dead_end!(nfa.deep_clone, alphabet)
+    end
+
+    # adds and error state to the NFA, create error transitions from all non-error states to the error state on any unhandled token.
+    # the error state doesn't have any outbound transitions.
+    def with_err_dead_end!(nfa, alphabet = nfa.alphabet)
+      error_state = nfa.states.find(&.error?)
+      return nfa if error_state
+
+      error_state = State.new_error_state
+      nfa.add_state(error_state)
+
+      nfa.states.each do |state|
+        unless state.error?
+          tokens_on_outbound_transitions = nfa.transitions_from(state).map(&.token).to_set
+          only_outbound_transition_is_epsilon_transition = tokens_on_outbound_transitions.size == 1 && tokens_on_outbound_transitions.first == NFATransition::Epsilon
+          unless only_outbound_transition_is_epsilon_transition
+            missing_tokens = (alphabet - Set{NFATransition::Epsilon}) - tokens_on_outbound_transitions
+            missing_tokens.each do |token|
+              nfa.add_transition(token, state, error_state)
+            end
+          end
         end
       end
 

@@ -95,19 +95,19 @@ module Kleene
     end
 
     def remove_state(state)
-      raise "Unable to remove state from NFA: at least one transition leads to or from the state." if nfa.all_transitions.any? {|transition| transition.from == state || transition.to == state }
+      raise "Unable to remove state from NFA: at least one transition leads to or from the state." if all_transitions.any? {|transition| transition.from == state || transition.to == state }
       @states.delete(state)
     end
     
     def add_transition(token, from_state, to_state)
-      # make sure states EITHER have a single outbound epsilon transition OR non-epsilon outbound transitions; they can't have both
-      if token == NFATransition::Epsilon
-        # make sure from_state doesn't have any outbound non-epsilon transitions
-        raise "Error: Non-epsilon transitions are already present! States may EITHER have a single outbound epsilon transision OR have outbound non-epsilon transitions, but not both." if transitions_from(from_state).any? {|t| !t.epsilon? }
-      else
-        # make sure from_state doesn't have any outbound epsilon transition
-        raise "Error: Epsilon transitions are already present! States may EITHER have a single outbound epsilon transision OR have outbound non-epsilon transitions, but not both." if transitions_from(from_state).any?(&.epsilon?)
-      end
+      # # make sure states EITHER have a single outbound epsilon transition OR non-epsilon outbound transitions; they can't have both
+      # if token == NFATransition::Epsilon
+      #   # make sure from_state doesn't have any outbound non-epsilon transitions
+      #   raise "Error: Non-epsilon transitions are already present on #{from_state.to_s}! States may EITHER have a single outbound epsilon transision OR have outbound non-epsilon transitions, but not both." if transitions_from(from_state).any? {|t| !t.epsilon? }
+      # else
+      #   # make sure from_state doesn't have any outbound epsilon transition
+      #   raise "Error: Epsilon transitions are already present on #{from_state.to_s}! States may EITHER have a single outbound epsilon transision OR have outbound non-epsilon transitions, but not both." if transitions_from(from_state).any?(&.epsilon?)
+      # end
 
       @alphabet << token      # alphabet is a set, so there will be no duplications
       @states << from_state
@@ -128,7 +128,7 @@ module Kleene
       matches = [] of MatchRef
       (input_start_offset...input.size).each do |offset|
         token = input[offset]
-        accept_token!(token)
+        handle_token!(token)
         if accept?
           matches << MatchRef.new(input, input_start_offset..offset)
         end
@@ -151,7 +151,7 @@ module Kleene
       # puts @current_states.map(&.id)
       input.each_char_with_index do |char, index|
         # puts char
-        accept_token!(char)
+        handle_token!(char)
         # puts @current_states.map(&.id)
       end
       
@@ -161,7 +161,7 @@ module Kleene
     end
     
     # process another input token
-    def accept_token!(input_token : Char)
+    def handle_token!(input_token : Char)
       @current_states = next_states(@current_states, input_token)
     end
     
@@ -275,7 +275,7 @@ module Kleene
       retval = states.map(&.to_s).join("\n")
       retval += "\n"
       all_transitions.each do |t|
-        transition_label = t.epsilon? ? "ε" : t.token
+        transition_label = t.epsilon? ? "epsilon" : t.token
         retval += "#{t.from.id} -> #{transition_label} -> #{t.to.id}\n"
       end
       retval
