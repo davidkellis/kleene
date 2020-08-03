@@ -147,7 +147,7 @@ end
 
 describe "MultiMatchDFA" do
   it "works" do
-    alphabet = Set{'a', 'b', 'z'}
+    alphabet = Kleene::DEFAULT_ALPHABET   # Set{'a', 'b', 'z'}
     a_dot = seq(literal("a", alphabet), dot(alphabet))   # /a./
     dot_b = seq(dot(alphabet), literal("b", alphabet))   # /.b/
     mmdfa = MultiMatchDFA.new([a_dot, dot_b])
