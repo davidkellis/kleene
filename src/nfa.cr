@@ -229,7 +229,7 @@ module Kleene
       nfa_start_state_set : Set(State) = epsilon_closure(@start_state)
       unvisited_state_sets : Set(Set(State)) = Set{nfa_start_state_set}
 
-      dfa_start_state = State.new(nfa_start_state_set.any?(&.final?))
+      dfa_start_state = State.new(nfa_start_state_set.any?(&.final?), nfa_start_state_set.any?(&.error?))
       state_map[nfa_start_state_set] = dfa_start_state
       until unvisited_state_sets.empty?
         # take one of the unvisited state sets
@@ -244,7 +244,7 @@ module Kleene
           unvisited_state_sets << next_nfa_state_set
 
           # this new DFA state, next_dfa_state, represents the next nfa state set, next_nfa_state_set
-          next_dfa_state = state_map[next_nfa_state_set] ||= State.new(next_nfa_state_set.any?(&.final?))
+          next_dfa_state = state_map[next_nfa_state_set] ||= State.new(next_nfa_state_set.any?(&.final?), next_nfa_state_set.any?(&.error?))
         
           char_transition_map = dfa_transitions[current_dfa_state] ||= Hash(Char, DFATransition).new
           char_transition_map[token] = DFATransition.new(token, current_dfa_state, next_dfa_state)
@@ -255,7 +255,7 @@ module Kleene
       end
       
       # `state_map.invert` is sufficient to convert from a (nfa_state_set => dfa_state) mapping to a (dfa_state => nfa_state_set) mapping, because the mappings are strictly one-to-one.
-      DFA.new(state_map[nfa_start_state_set], dfa_alphabet, dfa_transitions, state_map.invert)
+      DFA.new(state_map[nfa_start_state_set], dfa_alphabet, dfa_transitions, state_map.invert, origin_nfa: self)
     end
     
     def graphviz

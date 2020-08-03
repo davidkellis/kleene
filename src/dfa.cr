@@ -29,8 +29,10 @@ module Kleene
     property nfa_state_to_dfa_state_sets : Hash(State, Set(State))            # this map contains (nfa_state => dfa_state_set) pairs
     property transition_callbacks : Hash(DFATransition, DFATransitionCallback)
     property transition_callbacks_per_destination_state : Hash(State, DFATransitionCallback)
+    @origin_nfa : NFA?
+    @error_states : Set(State)?
     
-    def initialize(start_state, alphabet = DEFAULT_ALPHABET, transitions = Hash(State, Hash(Char, DFATransition)).new, @dfa_state_to_nfa_state_sets = Hash(State, Set(State)).new, transition_callbacks = nil)
+    def initialize(start_state, alphabet = DEFAULT_ALPHABET, transitions = Hash(State, Hash(Char, DFATransition)).new, @dfa_state_to_nfa_state_sets = Hash(State, Set(State)).new, transition_callbacks = nil, @origin_nfa = nil)
       @start_state = start_state
       @current_state = start_state
       @transitions = transitions
@@ -55,6 +57,18 @@ module Kleene
       update_final_states
       reset_current_state
     end
+
+    def origin_nfa
+      @origin_nfa || raise "This DFA was not created from an NFA, therefore it has no origin_nfa."
+    end
+
+    def error_states
+      @error_states ||= @states.select {|s| s.error? }.to_set
+    end
+
+    def clear_error_states
+      @error_states = nil
+    end
     
     def all_transitions() : Array(DFATransition)
       transitions.flat_map {|state, char_transition_map| char_transition_map.values }
@@ -66,6 +80,10 @@ module Kleene
 
     def on_transition_to(state, &blk : DFATransitionCallback)
       @transition_callbacks_per_destination_state[state] = blk
+    end
+
+    def shallow_clone
+      DFA.new(start_state, alphabet, transitions, dfa_state_to_nfa_state_sets, transition_callbacks, origin_nfa)
     end
 
     # transition callbacks are not copied beacuse it is assumed that the state transition callbacks may be stateful and reference structures or states that only exist in `self`, but not the cloned copy.
@@ -93,7 +111,7 @@ module Kleene
 
       new_dfa_state_to_nfa_state_sets = dfa_state_to_nfa_state_sets.map {|dfa_state, nfa_state_set| {state_mapping[dfa_state], nfa_state_set} }.to_h
       
-      DFA.new(state_mapping[@start_state], @alphabet.clone, new_transitions, new_dfa_state_to_nfa_state_sets)
+      DFA.new(state_mapping[@start_state], @alphabet.clone, new_transitions, new_dfa_state_to_nfa_state_sets, origin_nfa: origin_nfa)
     end
 
     def update_final_states
@@ -154,6 +172,14 @@ module Kleene
     def accept?
       @current_state.final?
     end
+
+    def error?
+      @current_state.final?
+    end
+
+    # def terminal?
+    #   accept? || error?
+    # end
 
     # if the DFA is currently in a final state, then we look up the associated NFA states that were also final, and return them
     # def accepting_nfa_states : Set(State)

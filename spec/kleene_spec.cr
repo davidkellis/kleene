@@ -148,14 +148,39 @@ end
 describe "MultiMatchDFA" do
   it "works" do
     alphabet = Set{'a', 'b', 'z'}
-    regex1 = seq(literal("a", alphabet), dot(alphabet))   # /a./
-    regex2 = seq(dot(alphabet), literal("b", alphabet))   # /.b/
-    mmdfa = MultiMatchDFA.new([regex1, regex2])
-    mt = mmdfa.matches("abzbazaaabzbzbbbb")
-    puts "start positions"
-    mt.candidate_match_start_positions.each {|nfa, indices| puts mmdfa.nfa_to_nfa_index[nfa]; puts indices }
-    puts "end positions"
-    mt.match_end_positions.each {|nfa, indices| puts mmdfa.nfa_to_nfa_index[nfa]; puts indices }
-    # mmdfa.matches("abzbazaaabzbzbbbb").should eq([] of MatchRef)
+    a_dot = seq(literal("a", alphabet), dot(alphabet))   # /a./
+    dot_b = seq(dot(alphabet), literal("b", alphabet))   # /.b/
+    mmdfa = MultiMatchDFA.new([a_dot, dot_b])
+
+    mt = mmdfa.match_tracker("abzbazaaabzbzbbbb")
+    mt.candidate_match_start_positions.should eq({
+      mmdfa.nfas_with_err_state[0] => [0, 4, 6, 7, 8],                                              # mmdfa.nfas_with_err_state[0] is just a_dot with a dead end error state
+      mmdfa.nfas_with_err_state[1] => [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]    # mmdfa.nfas_with_err_state[1] is just dot_b with a dead end error state
+    })
+    mt.match_end_positions.should eq({
+      mmdfa.nfas_with_err_state[0] => [1, 5, 7, 8, 9],                   # mmdfa.nfas_with_err_state[0] is just a_dot with a dead end error state
+      mmdfa.nfas_with_err_state[1] => [1, 3, 9, 11, 13, 14, 15, 16]      # mmdfa.nfas_with_err_state[1] is just dot_b with a dead end error state
+    })
+
+    input_string = "abzbazaaabzbzbbbb"
+    mmdfa.matches(input_string).should eq({
+      a_dot => [
+        MatchRef.new(input_string, 0..1),
+        MatchRef.new(input_string, 4..5),
+        MatchRef.new(input_string, 6..7),
+        MatchRef.new(input_string, 7..8),
+        MatchRef.new(input_string, 8..9)
+      ],
+      dot_b => [
+        MatchRef.new(input_string, 0..1),
+        MatchRef.new(input_string, 2..3),
+        MatchRef.new(input_string, 8..9),
+        MatchRef.new(input_string, 10..11),
+        MatchRef.new(input_string, 12..13),
+        MatchRef.new(input_string, 13..14),
+        MatchRef.new(input_string, 14..15),
+        MatchRef.new(input_string, 15..16)
+      ]
+    })
   end
 end
