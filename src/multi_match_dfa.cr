@@ -114,8 +114,6 @@ module Kleene
       match_tracker = MatchTracker.new
 
       # 1. identify DFA states that correspond to successful match of first character of the NFAs
-      #    then set up transition callbacks to push the index position of the start of a match of each NFA that has begun 
-      #    to be matched on the transition to one of the states in (1). this maintains a stack per NFA.
       epsilon_closure_of_nfa_start_state = composite_nfa.epsilon_closure(composite_nfa.start_state)
       nfa_states_that_correspond_to_successful_match_of_first_character_of_component_nfa = composite_nfa.transitions_from(epsilon_closure_of_nfa_start_state).
                                                                                                          reject {|transition| transition.epsilon? || transition.to.error? }.
@@ -124,9 +122,6 @@ module Kleene
                                                                                               compact_map {|nfa_state| dfa.nfa_state_to_dfa_state_sets[nfa_state]? }.
                                                                                               reduce{|memo, state_set| memo | state_set }
       dfa_state_to_nfas_that_have_matched_their_first_character = Hash(State, Set(NFA)).new
-      # puts "callbacks"
-      # puts "dfa_states_that_correspond_to_successful_match_of_first_character_of_component_nfa"
-      # puts dfa_states_that_correspond_to_successful_match_of_first_character_of_component_nfa.map(&.id)
       dfa_states_that_correspond_to_successful_match_of_first_character_of_component_nfa.each do |dfa_state|
         dfa_state_to_nfas_that_have_matched_their_first_character[dfa_state] = dfa.dfa_state_to_nfa_state_sets[dfa_state].
                                                                                    select {|nfa_state| nfa_states_that_correspond_to_successful_match_of_first_character_of_component_nfa.includes?(nfa_state) }.
@@ -135,7 +130,7 @@ module Kleene
         end.to_set
       end
 
-      # 2. set up transition callbacks to push the index position of the end of a successful match
+      # 2. identify DFA states that correspond to final states in the NFAs
       nfa_final_states = @nfas_with_err_state.map(&.final_states).reduce {|memo, state_set| memo | state_set }
       dfa_states_that_correspond_to_nfa_final_states = nfa_final_states.compact_map {|nfa_state| dfa.nfa_state_to_dfa_state_sets[nfa_state]? }.
                                                                         reduce{|memo, state_set| memo | state_set }
@@ -149,6 +144,12 @@ module Kleene
       end
 
       # set up call transition call backs, since the callbacks may only be defined once per state and transition
+      # For (1):
+      #    Set up transition callbacks to push the index position of the start of a match of each NFA that has begun 
+      #    to be matched on the transition to one of the states in (1)
+      # For (2):
+      #    set up transition callbacks to push the index position of the end of a successful match onto the list
+      #    of successful matches for the NFA that matched
       destination_dfa_states_for_callbacks = dfa_states_that_correspond_to_successful_match_of_first_character_of_component_nfa | dfa_states_that_correspond_to_nfa_final_states
       destination_dfa_states_for_callbacks.each do |dfa_state|
         dfa.on_transition_to(dfa_state) do |transition, token, token_index|

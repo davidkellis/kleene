@@ -65,12 +65,12 @@ module Kleene
       @range = match_range
     end
     
-    def match : String
+    def text : String
       @string[@range]
     end
     
     def to_s
-      match
+      text
     end
     
     def ==(other : MatchRef)
