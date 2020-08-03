@@ -44,13 +44,13 @@ describe Kleene do
       matches = nfa.matches("abcdefg,abcdefg,abbcdefg,abbbcdefg")
       matches.size.should eq 3
       matches[0].should_not eq matches[1]
-      matches[0].match.should eq matches[1].match
+      matches[0].text.should eq matches[1].text
       matches[0].range.should eq (0..2)
       matches[1].range.should eq (8..10)
       matches[2].range.should eq (16..19)
-      matches[0].match.should eq "abc"
-      matches[1].match.should eq "abc"
-      matches[2].match.should eq "abbc"
+      matches[0].text.should eq "abc"
+      matches[1].text.should eq "abc"
+      matches[2].text.should eq "abbc"
     end
 
     it "matches kleene start operator" do
@@ -115,13 +115,13 @@ describe Kleene do
       matches = dfa.matches("abcdefg,abcdefg,abbcdefg,abbbcdefg")
       matches.size.should eq 3
       matches[0].should_not eq matches[1]
-      matches[0].match.should eq matches[1].match
+      matches[0].text.should eq matches[1].text
       matches[0].range.should eq (0..2)
       matches[1].range.should eq (8..10)
       matches[2].range.should eq (16..19)
-      matches[0].match.should eq "abc"
-      matches[1].match.should eq "abc"
-      matches[2].match.should eq "abbc"
+      matches[0].text.should eq "abc"
+      matches[1].text.should eq "abc"
+      matches[2].text.should eq "abbc"
     end
 
     it "matches kleene start operator" do
