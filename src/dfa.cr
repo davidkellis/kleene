@@ -31,6 +31,7 @@ module Kleene
     property transition_callbacks_per_destination_state : Hash(State, DFATransitionCallback)
     @origin_nfa : NFA?
     @error_states : Set(State)?
+    @regex_pattern : String?
     
     def initialize(start_state, alphabet = DEFAULT_ALPHABET, transitions = Hash(State, Hash(Char, DFATransition)).new, @dfa_state_to_nfa_state_sets = Hash(State, Set(State)).new, transition_callbacks = nil, @origin_nfa = nil)
       @start_state = start_state
@@ -83,7 +84,7 @@ module Kleene
     end
 
     def shallow_clone
-      DFA.new(start_state, alphabet, transitions, dfa_state_to_nfa_state_sets, transition_callbacks, origin_nfa)
+      DFA.new(start_state, alphabet, transitions, dfa_state_to_nfa_state_sets, transition_callbacks, origin_nfa).set_regex_pattern(regex_pattern)
     end
 
     # transition callbacks are not copied beacuse it is assumed that the state transition callbacks may be stateful and reference structures or states that only exist in `self`, but not the cloned copy.
@@ -111,7 +112,7 @@ module Kleene
 
       new_dfa_state_to_nfa_state_sets = dfa_state_to_nfa_state_sets.map {|dfa_state, nfa_state_set| {state_mapping[dfa_state], nfa_state_set} }.to_h
       
-      DFA.new(state_mapping[@start_state], @alphabet.clone, new_transitions, new_dfa_state_to_nfa_state_sets, origin_nfa: origin_nfa)
+      DFA.new(state_mapping[@start_state], @alphabet.clone, new_transitions, new_dfa_state_to_nfa_state_sets, origin_nfa: origin_nfa).set_regex_pattern(regex_pattern)
     end
 
     def update_final_states
@@ -174,7 +175,7 @@ module Kleene
     end
 
     def error?
-      @current_state.final?
+      @current_state.error?
     end
 
     # def terminal?
@@ -223,19 +224,32 @@ module Kleene
     #   # nfa
     # end
 
-    def to_s
-      retval = states.map(&.to_s).join("\n")
-      retval += "\n"
-      all_transitions.each do |t|
-        retval += "#{t.from.id} -> #{t.token} -> #{t.to.id}\n"
+    def to_s(verbose = false)
+      if verbose
+        retval = states.map(&.to_s).join("\n")
+        retval += "\n"
+        all_transitions.each do |t|
+          retval += "#{t.from.id} -> #{t.token} -> #{t.to.id}\n"
+        end
+        retval
+      else
+        regex_pattern
       end
-      retval
     end
     
     # This is an implementation of the "Reducing a DFA to a Minimal DFA" algorithm presented here: http://web.cecs.pdx.edu/~harry/compilers/slides/LexicalPart4.pdf
     # This implements Hopcroft's algorithm as presented on page 142 of the first edition of the dragon book.
     def minimize!
       # todo: I'll implement this when I need it
+    end
+
+    def set_regex_pattern(pattern)
+      @regex_pattern = pattern
+      self
+    end
+
+    def regex_pattern
+      @regex_pattern || "<<empty>>"
     end
   end
   

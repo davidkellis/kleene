@@ -28,6 +28,7 @@ module Kleene
     property transitions : Hash(State, Hash(Char, Set(NFATransition)))
     property current_states : Set(State)
     property final_states : Set(State)
+    @regex_pattern : String?
     
     def initialize(start_state, alphabet = DEFAULT_ALPHABET, transitions = Hash(State, Hash(Char, Set(NFATransition))).new, initial_states = nil)
       @start_state = start_state
@@ -71,7 +72,7 @@ module Kleene
         }
       }.to_h
       
-      NFA.new(state_mapping[@start_state], @alphabet.clone, new_transitions, new_states.to_set)
+      NFA.new(state_mapping[@start_state], @alphabet.clone, new_transitions, new_states.to_set).set_regex_pattern(regex_pattern)
     end
 
     def update_final_states
@@ -99,7 +100,7 @@ module Kleene
       @states.delete(state)
     end
     
-    def add_transition(token, from_state, to_state)
+    def add_transition(token : Char, from_state, to_state)
       # # make sure states EITHER have a single outbound epsilon transition OR non-epsilon outbound transitions; they can't have both
       # if token == NFATransition::Epsilon
       #   # make sure from_state doesn't have any outbound non-epsilon transitions
@@ -255,7 +256,7 @@ module Kleene
       end
       
       # `state_map.invert` is sufficient to convert from a (nfa_state_set => dfa_state) mapping to a (dfa_state => nfa_state_set) mapping, because the mappings are strictly one-to-one.
-      DFA.new(state_map[nfa_start_state_set], dfa_alphabet, dfa_transitions, state_map.invert, origin_nfa: self)
+      DFA.new(state_map[nfa_start_state_set], dfa_alphabet, dfa_transitions, state_map.invert, origin_nfa: self).set_regex_pattern(regex_pattern)
     end
     
     def graphviz
@@ -271,14 +272,27 @@ module Kleene
       retval
     end
 
-    def to_s
-      retval = states.map(&.to_s).join("\n")
-      retval += "\n"
-      all_transitions.each do |t|
-        transition_label = t.epsilon? ? "epsilon" : t.token
-        retval += "#{t.from.id} -> #{transition_label} -> #{t.to.id}\n"
+    def to_s(verbose = false)
+      if verbose
+        retval = states.map(&.to_s).join("\n")
+        retval += "\n"
+        all_transitions.each do |t|
+          transition_label = t.epsilon? ? "epsilon" : t.token
+          retval += "#{t.from.id} -> #{transition_label} -> #{t.to.id}\n"
+        end
+        retval
+      else
+        regex_pattern
       end
-      retval
+    end
+
+    def set_regex_pattern(pattern)
+      @regex_pattern = pattern
+      self
+    end
+
+    def regex_pattern
+      @regex_pattern || "<<empty>>"
     end
   end
   

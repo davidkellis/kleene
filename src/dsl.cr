@@ -22,6 +22,7 @@ module Kleene
       end
       current_state.final = true
       nfa.update_final_states
+      nfa.set_regex_pattern(token_stream)
       nfa
     end
     
@@ -33,18 +34,20 @@ module Kleene
       final = State.new(true)
       token_collection.each {|token| nfa.add_transition(token, start, final) }
       nfa.update_final_states
+      regex_pattern = "[#{token_collection.join("")}]"
+      nfa.set_regex_pattern(regex_pattern)
       nfa
     end
 
     # two states: start state and final state
     # structure: start state -> transitions for every token in the alphabet -> final state
     def dot(alphabet = DEFAULT_ALPHABET)
-      any(alphabet, alphabet)
+      any(alphabet, alphabet).set_regex_pattern(".")
     end
     
     # This implements a character class, and is specifically for use with matching strings
     def range(c_begin : Char, c_end : Char, alphabet = DEFAULT_ALPHABET)
-      any((c_begin..c_end).to_a, alphabet)
+      any((c_begin..c_end).to_a, alphabet).set_regex_pattern("[#{c_begin}-#{c_end}]")
     end
     
     ############### The following methods create FSAs given other FSAs #################
@@ -73,7 +76,7 @@ module Kleene
 
       nfa.remove_state(error_state) if nfa.all_transitions.none? {|transition| transition.from == error_state || transition.to == error_state }
       
-      nfa
+      nfa.set_regex_pattern("/#{nfa.regex_pattern}/E")
     end
 
     # always clones the given nfa and returns a new nfa with a non-final error state
@@ -103,9 +106,10 @@ module Kleene
         end
       end
 
+      # remove the error state if it has no inbound or outbound transitions
       nfa.remove_state(error_state) if nfa.all_transitions.none? {|transition| transition.from == error_state || transition.to == error_state }
       
-      nfa
+      nfa.set_regex_pattern("/#{nfa.regex_pattern}/DE")
     end
 
     # Append b onto a
@@ -158,7 +162,7 @@ module Kleene
       a.states.each {|state| state.final = b.final_states.includes?(state) }
       a.update_final_states
       
-      a
+      a.set_regex_pattern("#{a.regex_pattern}#{b.regex_pattern}")
     end
 
     def union(*nfa_splat_tuple)
@@ -193,7 +197,7 @@ module Kleene
       
       new_nfa.update_final_states
       
-      new_nfa
+      new_nfa.set_regex_pattern("#{nfas.map(&.regex_pattern).join("|")}")
     end
     
     # Implements Kleene Star, as defined in the Ragel manual in section 2.5.6 of http://www.colm.net/files/ragel/ragel-guide-6.10.pdf:
@@ -219,43 +223,48 @@ module Kleene
       (machine.all_transitions).each {|t| nfa.add_transition(t.token, t.from, t.to) }
       nfa.update_final_states
       
-      nfa
+      nfa.set_regex_pattern("#{machine.regex_pattern}*")
     end
     
     def plus(machine)
-      seq(machine, kleene(machine))
+      seq(machine, kleene(machine)).set_regex_pattern("#{machine.regex_pattern}+")
     end
     
     def optional(machine)
-      union(machine, NFA.new(State.new(true), machine.alphabet))
+      empty = NFA.new(State.new(true), machine.alphabet).set_regex_pattern("")
+      union(machine, empty).set_regex_pattern("#{machine.regex_pattern}?")
     end
     
-    def repeat(machine, min, max = nil)
-      max ||= min
-      m = NFA.new(State.new(true), machine.alphabet)
-      min.times { m = seq(m, machine) }
-      (max - min).times { m = append(m, machine) }
-      m
-    end
+    # def repeat(machine, min, max = nil)
+    #   max ||= min
+    #   m = NFA.new(State.new(true), machine.alphabet)
+    #   min.times { m = seq(m, machine) }
+    #   (max - min).times { m = append(m, machine) }
+    #   if min != max
+    #     m.set_regex_pattern("#{machine.regex_pattern}{#{min},#{max}}")
+    #   else
+    #     m.set_regex_pattern("#{machine.regex_pattern}{#{min}}")
+    #   end
+    # end
     
-    def negate(machine)
-      machine = machine.to_dfa
+    # def negate(machine)
+    #   machine = machine.to_dfa
       
-      # invert the final flag of every state
-      machine.states.each {|state| state.final = !state.final? }
-      machine.update_final_states
+    #   # invert the final flag of every state
+    #   machine.states.each {|state| state.final = !state.final? }
+    #   machine.update_final_states
       
-      machine.to_nfa
-    end
+    #   machine.to_nfa.set_regex_pattern("(!#{machine.regex_pattern})")
+    # end
     
-    # a - b == a && !b
-    def difference(a, b)
-      intersection(a, negate(b))
-    end
+    # # a - b == a && !b
+    # def difference(a, b)
+    #   intersection(a, negate(b))
+    # end
     
-    # By De Morgan's Law: !(!a || !b) = a && b
-    def intersection(a, b)
-      negate(union(negate(a), negate(b)))
-    end
+    # # By De Morgan's Law: !(!a || !b) = a && b
+    # def intersection(a, b)
+    #   negate(union(negate(a), negate(b)))
+    # end
   end
 end

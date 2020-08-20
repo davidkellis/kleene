@@ -8,6 +8,19 @@ module Kleene
 
     def initialize(@name, @pattern)
     end
+
+    def ==(other : Token)
+      @name == other.name &&
+      @pattern == other.pattern
+    end
+    
+    def eql?(other : Token)
+      self == other
+    end
+
+    def to_s
+      "Token(name=#{name}, pattern=NFA@#{pattern.object_id})"
+    end
   end
 
   class Lexeme
@@ -19,6 +32,39 @@ module Kleene
 
     def text
       match.text
+    end
+
+    def ==(other : Lexeme)
+      @token == other.token &&
+      @match == other.match
+    end
+    
+    def eql?(other : Lexeme)
+      self == other
+    end
+
+    def to_s
+      "Lexeme(token=#{token.name}, match=#{match.range})"
+    end
+  end
+
+  module LexerDSL
+    include DSL
+
+    def alpha
+      plus(union(range('a', 'z'), range('A', 'Z')))
+    end
+
+    def numeric
+      plus(range('0', '9'))
+    end
+
+    def letter
+      plus(union(range('a', 'z'), range('A', 'Z'), literal("_")))
+    end
+
+    def alphanumeric
+      plus(union(range('a', 'z'), range('A', 'Z'), range('0', '9')))
     end
   end
 
@@ -41,5 +87,6 @@ module Kleene
         memo.concat(lexemes)
       end
     end
+
   end
 end
